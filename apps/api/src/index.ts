@@ -5,6 +5,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
 import type { ApiBindings } from "./lib/bindings.ts";
 import { SupabaseRestError } from "./lib/supabase-rest.ts";
+import { logEvent, safeErrorSummary, sanitizeErrorDetail } from "./lib/observability/logger.ts";
 
 const app = new Hono<{ Bindings: ApiBindings }>();
 
@@ -47,9 +48,21 @@ app.notFound((c) => {
 });
 
 app.onError((error, c) => {
-  console.error("api.unhandled_error", {
-    message: error.message,
-    stack: error.stack,
+  logEvent("error", "api.unhandled_error", "La solicitud terminó con un error no controlado.", {
+    environment: c.env.APP_ENV,
+    method: c.req.method,
+    path: new URL(c.req.url).pathname,
+    cfRay: c.req.header("cf-ray"),
+    error: {
+      ...safeErrorSummary(error),
+      ...(error instanceof SupabaseRestError
+        ? {
+            category: "database",
+            httpStatus: error.status,
+            safeDetail: sanitizeErrorDetail(error.body || error.message),
+          }
+        : {}),
+    },
   });
 
   if (

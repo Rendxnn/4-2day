@@ -110,18 +110,27 @@ export async function sendOrderCustomerNotification(input: {
   notification: OrderCustomerNotificationPayload;
   notificationType: OrderCustomerNotificationType;
 }): Promise<OrderRow> {
+  const traceId = `PHN-${crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  const logContext = {
+    traceId,
+    conversationId: input.context.draftOrder?.conversation_id ?? undefined,
+  };
   const result = input.notification.kind === "image"
     ? await sendWhatsAppImageMessage(input.env, {
         to: input.context.customer.phone,
         imageUrl: input.notification.imageUrl,
         caption: input.notification.caption,
-      })
+      }, logContext)
     : await sendWhatsAppTextMessage(input.env, {
         to: input.context.customer.phone,
         text: input.notification.text,
-      });
+      }, logContext);
   const now = new Date().toISOString();
-  const notificationStatus = result.providerMessageId ? "sent" : "failed";
+  const notificationSent = result.ok && Boolean(result.providerMessageId);
+  const notificationStatus = notificationSent ? "sent" : "failed";
+  const notificationError = notificationSent
+    ? null
+    : buildNotificationFailureCode(input.notificationType, result.error?.code);
   const [updatedOrder] = await createSupabaseRestClient(input.env).updateReturning<OrderRow>({
     schema: input.schemaName,
     table: "orders",
@@ -129,9 +138,9 @@ export async function sendOrderCustomerNotification(input: {
       id: `eq.${input.context.order.id}`,
     },
     patch: {
-      customer_notified_at: result.providerMessageId ? now : null,
+      customer_notified_at: notificationSent ? now : null,
       customer_notification_status: notificationStatus,
-      customer_notification_error: result.providerMessageId ? null : `notification_${input.notificationType}_failed`,
+      customer_notification_error: notificationError,
       updated_at: now,
     },
   });
@@ -142,6 +151,7 @@ export async function sendOrderCustomerNotification(input: {
         orderId: input.context.order.id,
         notificationType: input.notificationType,
         source: "dashboard_api",
+        traceId,
       },
     };
     await (input.notification.kind === "image"
@@ -173,15 +183,28 @@ export async function sendOrderCustomerNotification(input: {
       conversation_id: input.context.draftOrder?.conversation_id ?? null,
       draft_order_id: input.context.order.draft_order_id ?? null,
       order_id: input.context.order.id,
-      event_name: result.providerMessageId ? "whatsapp.customer_notification_sent" : "whatsapp.customer_notification_failed",
-      severity: result.providerMessageId ? "info" : "warn",
+      event_name: notificationSent ? "whatsapp.customer_notification_sent" : "whatsapp.customer_notification_failed",
+      severity: notificationSent ? "info" : "warn",
       source: "dashboard_api",
       metadata: {
+        traceId,
         notificationType: input.notificationType,
         providerMessageId: result.providerMessageId ?? null,
+        httpStatus: result.httpStatus,
+        error: result.error ?? null,
       },
     },
   }).catch(() => undefined);
 
   return updatedOrder ?? input.context.order;
+}
+
+function buildNotificationFailureCode(
+  notificationType: OrderCustomerNotificationType,
+  providerCode: string | number | undefined,
+): string {
+  const safeProviderCode = typeof providerCode === "string" || typeof providerCode === "number"
+    ? `_meta_${String(providerCode).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32)}`
+    : "";
+  return `notification_${notificationType}_failed${safeProviderCode}`;
 }

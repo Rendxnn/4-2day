@@ -25,6 +25,7 @@ export type RouteInboundMessageInput = {
   tenant: Tenant;
   conversation: Conversation;
   message: NormalizedInboundMessage;
+  traceId: string;
   loggedMessageId?: string;
   routingTrace?: ResponseRoutingTrace;
 };

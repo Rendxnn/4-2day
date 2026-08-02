@@ -1,6 +1,7 @@
 import { calculateDraftTotals } from "@42day/core";
 import type { Conversation, DraftOrder, FulfillmentType, MenuItem, OrderBillingDetails, OrderLineItem, OrderLineItemOptionsSnapshot, PaymentMethod } from "@42day/types";
 import type { ApiBindings } from "../../lib/bindings";
+import { logEvent } from "../../lib/observability/logger.ts";
 import { createSupabaseRestClient } from "../../lib/supabase-rest";
 import {
   createDraftOrderRow,
@@ -562,18 +563,19 @@ async function recalculateDraftOrder(input: {
     },
   });
 
-  console.info(JSON.stringify({
-    event: "draft_order.recalculated",
+  logEvent("info", "draft_order.recalculated", "Se recalcularon los totales y el estado del borrador.", {
+    environment: input.env.APP_ENV,
     schemaName: input.schemaName,
     draftOrderId: nextDraft.id,
     status: nextDraft.status,
-    items: nextDraft.items.map((item) => ({ name: item.name, quantity: item.quantity, lineTotal: item.lineTotal })),
+    itemCount: nextDraft.items.length,
+    totalQuantity: nextDraft.items.reduce((sum, item) => sum + item.quantity, 0),
     fulfillmentType: nextDraft.fulfillmentType ?? null,
     paymentMethod: nextDraft.paymentMethod ?? null,
     hasDeliveryAddress: Boolean(nextDraft.deliveryAddress || nextDraft.deliveryAddressId),
     billingType: nextDraft.billing?.type ?? null,
     total: nextDraft.total,
-  }));
+  });
 
   return nextDraft;
 }

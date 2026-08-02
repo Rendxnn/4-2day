@@ -21,7 +21,8 @@ import { persistPendingProductConfiguration, readPendingProductConfiguration } f
 import { cancelPendingCustomerReplacementOrder, getPendingCustomerReplacementOrder } from "../../orders/service";
 import { completeConversationAfterOrderCancellation } from "../../conversations/service";
 import { persistHumanInterventionAlert } from "../../../modules/handoff-service/handoff-service";
-import { createSupabaseRestClient } from "../../../lib/supabase-rest";
+import { createSupabaseRestClient, SupabaseRestError } from "../../../lib/supabase-rest";
+import { safeErrorSummary, sanitizeErrorDetail } from "../../../lib/observability/logger.ts";
 import { SemanticOperationPlanInferenceError, allowedSemanticOperations, parseSemanticOperationPlan, semanticOperationPlanFailureDiagnostics, type SemanticBillingInput, type SemanticConfigurationSelection, type SemanticOperation, type SemanticOperationPlan } from "./operation-plan";
 import { consolidateOrderLineItems } from "../../draft-orders/consolidation.ts";
 import { hasExplicitFulfillmentEvidence, hasExplicitPaymentEvidence } from "./evidence.ts";
@@ -99,6 +100,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
     const execution = await parseSemanticOperationPlan({
       env: input.env,
       tenantId: input.tenant.id,
+      traceId: input.traceId,
       rawMessage: input.message.text ?? "",
       conversation: input.conversation,
       menu,
@@ -131,8 +133,11 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
     });
   } catch (error) {
     const diagnostics = semanticOperationPlanFailureDiagnostics(error);
+    const failedProvider = error instanceof SemanticOperationPlanInferenceError
+      ? error.attempts.at(-1)?.provider ?? providerId
+      : providerId;
     logRoutingDiagnostic(input, "semantic_operation_plan.failed", {
-      provider: providerId,
+      provider: failedProvider,
       reason: classifySemanticFailure(error),
       ...diagnostics,
       menuItemCount: menu.items.length,
@@ -142,7 +147,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
     markLlmOutcome(input, {
       used: false,
       outcome: "skipped_or_failed",
-      provider: providerId,
+      provider: failedProvider,
       reason: "semantic_operation_plan_provider_failure",
       diagnostics,
     });
@@ -157,6 +162,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   }
 
   if (parsed.operations.some((operation) => operation.type === "request_human")) {
+    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_request_human" });
     await moveToManual(input, {
       type: "support_requested",
       manualReason: "semantic_operation_requested_human",
@@ -164,13 +170,12 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       description: "El cliente pidió hablar con una persona.",
       responseText: "Claro, voy a ponerte en contacto con alguien del restaurante para que te ayude.",
     });
-    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_request_human" });
     return true;
   }
 
   if (parsed.operations.some((operation) => operation.type === "show_menu")) {
-    await sendAndLogText(input, [buildWelcomeMenuText(menu, input.tenant.name), existingDraft ? buildOrderProgressSnapshot(existingDraft) : ""].filter(Boolean).join("\n\n"));
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_show_menu" });
+    await sendAndLogText(input, [buildWelcomeMenuText(menu, input.tenant.name), existingDraft ? buildOrderProgressSnapshot(existingDraft) : ""].filter(Boolean).join("\n\n"));
     return true;
   }
 
@@ -184,9 +189,16 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   ].includes(operation.type));
   if (controlOperations.length > 0) {
     if (parsed.operations.length !== 1 || controlOperations.length !== 1) {
+      markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: "semantic_control_mixed" });
       await handleClarification(input, "Primero resolvamos una sola decisión del pedido para continuar.", "semantic_control_mixed");
       return true;
     }
+    markLlmOutcome(input, {
+      used: true,
+      outcome: "handled",
+      provider: providerId,
+      reason: `semantic_${controlOperations[0]!.type}`,
+    });
     const handled = await tryHandleSemanticControl(input, controlOperations[0]!);
     markLlmOutcome(input, {
       used: handled,
@@ -198,6 +210,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   }
 
   if (parsed.operations.some((operation) => operation.type === "confirm_order") && parsed.operations.length === 1) {
+    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_confirm_order" });
     const handled = await tryHandleConfirmation(input, { confirmation: "yes" });
     markLlmOutcome(input, { used: handled, outcome: handled ? "handled" : "unresolved", provider: providerId, reason: "semantic_confirm_order" });
     return handled;
@@ -205,6 +218,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
 
   if (parsed.operations.some((operation) => operation.type === "cancel_order")) {
     if (input.conversation.state !== "awaiting_order_adjustment" || parsed.operations.length !== 1 || !pendingAdjustment) {
+      markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: "semantic_cancel_not_allowed" });
       await handleClarification(input, "En este momento solo puedo cancelar el pedido que está pendiente por ajustar. Dime qué deseas cambiar o escribe asesor para recibir ayuda.", "semantic_cancel_not_allowed");
       return true;
     }
@@ -219,15 +233,15 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       schemaName: input.tenant.schemaName,
       conversationId: input.conversation.id,
     });
-    await sendAndLogText(input, "Entendido. Ya cancelé ese pedido. Gracias por avisarme.");
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_cancel_order_adjustment" });
+    await sendAndLogText(input, "Entendido. Ya cancelé ese pedido. Gracias por avisarme.");
     return true;
   }
 
   const validation = await validateOperationPlan(input, { menu, draft: existingDraft, plan: parsed, pendingAdjustment, pendingConfiguration });
   if (validation.kind === "pending_configuration") {
-    await persistPendingProductConfiguration(input, validation.payload);
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_operation_pending_configuration" });
+    await persistPendingProductConfiguration(input, validation.payload);
     return true;
   }
   if (validation.kind === "invalid") {
@@ -238,6 +252,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   }
 
   if (!validation.value.hasMutation) {
+    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_continue_checkout" });
     if (existingDraft) {
       const next = await resolveNextStep(input, existingDraft, menu, {
         isAdjustment: false,
@@ -248,7 +263,6 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
     } else {
       await handleClarification(input, buildClarificationPrompt(input.conversation.state), "semantic_operation_no_mutation");
     }
-    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_continue_checkout" });
     return true;
   }
 
@@ -274,11 +288,17 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       context: contextAfterSemanticPlan(input, next.context, pendingConfiguration),
     });
     logRoutingDiagnostic(input, "semantic_operation_plan.applied", { operationTypes: parsed.operations.map((operation) => operation.type), nextState: next.state, itemCount: draft.items.length, total: draft.total });
-    await sendOrderStepMessage(input, draft, menu, next);
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_operation_plan_applied" });
+    await sendOrderStepMessage(input, draft, menu, next);
     return true;
   } catch (error) {
-    logRoutingDiagnostic(input, "semantic_operation_plan.transaction_failed", { reason: classifySemanticFailure(error), operationTypes: parsed.operations.map((operation) => operation.type) });
+    const operationError = semanticOperationFailureDiagnostics(error);
+    logRoutingDiagnostic(input, "semantic_operation_plan.transaction_failed", {
+      reason: classifySemanticFailure(error),
+      operationTypes: parsed.operations.map((operation) => operation.type),
+      error: operationError,
+      orderChanged: false,
+    });
     markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: "semantic_operation_transaction_failed" });
     await handleClarification(input, "Tu pedido no cambió porque detecté una actualización reciente. Revisemos el estado actual antes de continuar.", "semantic_operation_transaction_failed");
     return true;
@@ -839,11 +859,70 @@ function classifySemanticFailure(error: unknown): string {
   return "unknown_failure";
 }
 
+function semanticOperationFailureDiagnostics(error: unknown): Record<string, unknown> {
+  if (error instanceof SupabaseRestError) {
+    let upstreamCode: string | undefined;
+    let upstreamDetails: string | undefined;
+    try {
+      const parsed = JSON.parse(error.body) as unknown;
+      if (isRecord(parsed)) {
+        upstreamCode = typeof parsed.code === "string" ? parsed.code : undefined;
+        upstreamDetails = typeof parsed.message === "string"
+          ? sanitizeErrorDetail(parsed.message)
+          : typeof parsed.details === "string"
+            ? sanitizeErrorDetail(parsed.details)
+            : undefined;
+      }
+    } catch {
+      upstreamDetails = sanitizeErrorDetail(error.body);
+    }
+
+    return {
+      category: "database",
+      code: error.message,
+      httpStatus: error.status,
+      upstreamCode,
+      safeDetail: upstreamDetails,
+      retriable: error.status >= 500 || error.status === 409,
+    };
+  }
+
+  return {
+    category: "internal",
+    ...safeErrorSummary(error),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 async function handleSemanticProviderFailure(
   input: RouteInboundMessageInput,
   diagnostics: Record<string, unknown>,
 ): Promise<void> {
   const client = createSupabaseRestClient(input.env);
+  await client.insert({
+    schema: input.tenant.schemaName,
+    table: "app_events",
+    rows: {
+      conversation_id: input.conversation.id,
+      draft_order_id: input.conversation.currentDraftOrderId,
+      event_name: "ai.semantic_plan.failed",
+      severity: "error",
+      source: "message_router",
+      metadata: {
+        traceId: input.traceId,
+        orderChanged: false,
+        diagnostics,
+      },
+    },
+  }).catch((eventError: unknown) => {
+    logRoutingDiagnostic(input, "semantic_operation_plan.event_persist_failed", {
+      error: safeErrorSummary(eventError),
+    });
+  });
+
   const [existingAlert] = await client.select<{ id: string }>({
     schema: input.tenant.schemaName,
     table: "human_intervention_alerts",

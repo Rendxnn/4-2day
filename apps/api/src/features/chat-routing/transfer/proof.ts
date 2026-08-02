@@ -15,6 +15,7 @@ import {
 import { moveToManual } from "../manual/handoff";
 import { sendAndLogText } from "../outbound/send";
 import type { RouteInboundMessageInput } from "../shared/types";
+import { logEvent, safeErrorSummary } from "../../../lib/observability/logger.ts";
 
 export async function tryHandleTransferProof(input: RouteInboundMessageInput): Promise<boolean> {
   if (isTransferProofMediaMessage(input.message)) {
@@ -78,10 +79,14 @@ export async function tryHandleTransferProof(input: RouteInboundMessageInput): P
       });
       return true;
     } catch (error) {
-      console.error("payment_proof.processing_failed", {
-        error: error instanceof Error ? error.message : String(error),
+      const safeError = safeErrorSummary(error);
+      logEvent("error", "payment_proof.processing_failed", "No se pudo procesar el comprobante de pago.", {
+        environment: input.env.APP_ENV,
+        traceId: input.traceId,
+        tenantId: input.tenant.id,
         conversationId: input.conversation.id,
         providerMessageId: input.message.providerMessageId,
+        error: safeError,
       });
 
       await createSupabaseRestClient(input.env).insert({
@@ -94,9 +99,11 @@ export async function tryHandleTransferProof(input: RouteInboundMessageInput): P
           severity: "error",
           source: "chat_routing",
           metadata: {
+            traceId: input.traceId,
             providerMessageId: input.message.providerMessageId,
             mediaId: input.message.mediaId ?? null,
-            reason: error instanceof Error ? error.message : String(error),
+            reason: safeError.safeDetail,
+            errorCode: safeError.code,
           },
         },
       }).catch(() => undefined);

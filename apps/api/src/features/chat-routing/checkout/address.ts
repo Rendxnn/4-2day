@@ -17,6 +17,7 @@ import { WHATSAPP_LOCATION_LABEL } from "../../delivery-coverage/customer-safe-a
 import { segmentDeliveryAddress } from "../../delivery-coverage/address-text";
 import { startBillingStep } from "./billing";
 import { buildAddressValidationRetryPrompt, buildWrittenAddressHelpPrompt } from "./address-prompts";
+import { logEvent, safeErrorSummary } from "../../../lib/observability/logger.ts";
 
 export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, signals: {
   looksLikeAddress?: boolean;
@@ -102,9 +103,12 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
       } catch (error) {
         // A geocoding outage must not block checkout when the restaurant has
         // enabled written addresses as a delivery reference.
-        console.warn("delivery_coverage.written_address_geocoding_failed", {
+        logEvent("warn", "delivery_coverage.written_address_geocoding_failed", "No se pudo geocodificar la dirección escrita; continuará como referencia.", {
+          environment: input.env.APP_ENV,
+          traceId: input.traceId,
+          tenantId: input.tenant.id,
           conversationId: input.conversation.id,
-          reason: error instanceof Error ? error.message : String(error),
+          error: safeErrorSummary(error),
         });
       }
     }
@@ -226,9 +230,12 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
       longitude: input.message.location!.longitude,
     }) ?? resolvedDeliveryAddress;
   } catch (error) {
-    console.warn("delivery_coverage.reverse_geocoding_failed", {
+    logEvent("warn", "delivery_coverage.reverse_geocoding_failed", "No se pudo obtener una dirección legible desde la ubicación.", {
+      environment: input.env.APP_ENV,
+      traceId: input.traceId,
+      tenantId: input.tenant.id,
       conversationId: input.conversation.id,
-      reason: error instanceof Error ? error.message : String(error),
+      error: safeErrorSummary(error),
     });
   }
 

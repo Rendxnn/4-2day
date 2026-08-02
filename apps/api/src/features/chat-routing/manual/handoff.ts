@@ -4,6 +4,7 @@ import { persistHumanInterventionAlert } from "../../../modules/handoff-service/
 import { sendAndLogText } from "../outbound/send";
 import { buildMaxClarificationMessage } from "../../../modules/message-router/response-composer";
 import type { RouteInboundMessageInput } from "../shared/types";
+import { logEvent, safeErrorSummary } from "../../../lib/observability/logger.ts";
 
 export async function handleClarification(
   input: RouteInboundMessageInput,
@@ -63,9 +64,12 @@ export async function moveToManual(input: RouteInboundMessageInput, payload: {
       },
     },
   }).catch((error: unknown) => {
-    console.error("handoff.alert_create_failed", {
-      error: error instanceof Error ? error.message : String(error),
+    logEvent("error", "handoff.alert_create_failed", "No se pudo crear la alerta de intervención humana.", {
+      environment: input.env.APP_ENV,
+      traceId: input.traceId,
+      tenantId: input.tenant.id,
       conversationId: input.conversation.id,
+      error: safeErrorSummary(error),
     });
   });
 

@@ -144,7 +144,9 @@ async function logOutboundMessage(input: {
       message_type: input.messageType,
       text: input.text,
       payload: appendInternalPayload(input.result.raw, input.metadata),
-      status: input.result.providerMessageId ? "sent" : "send_attempted",
+      status: input.result.ok
+        ? input.result.providerMessageId ? "sent" : "send_attempted"
+        : "failed",
     },
   });
 }

@@ -9,6 +9,7 @@ description_for() {
     show-helpers.sh) printf '%s' "Lists the available helpers." ;;
     install-workspace-deps.sh) printf '%s' "Installs or repairs workspace dependencies." ;;
     set-cf-worker-secret.sh) printf '%s' "Updates any Cloudflare Worker secret." ;;
+    set-worker-secrets.sh) printf '%s' "Validates and bulk uploads all Worker secrets for one environment." ;;
     set-meta-access-token.sh) printf '%s' "Updates META_ACCESS_TOKEN in Cloudflare." ;;
     set-meta-phone-number-id.sh) printf '%s' "Updates META_PHONE_NUMBER_ID in Cloudflare." ;;
     set-gemini-api-key.sh) printf '%s' "Updates GEMINI_API_KEY in Cloudflare." ;;

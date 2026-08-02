@@ -1,6 +1,8 @@
 import { AiProviderRouter, AiRouterError, createObjectTask, GeminiAdapter, OpenRouterAdapter } from "@rendxnn/t-router";
 import type { Conversation, DraftOrder, TodayMenuPayload } from "@42day/types";
+import { z } from "zod";
 import type { ApiBindings } from "../../../lib/bindings";
+import { logEvent } from "../../../lib/observability/logger.ts";
 import { loadTenantAiFallbackProviderConfig, loadTenantAiProviderConfig } from "../../../modules/ai-provider-config/ai-provider-config";
 
 type SemanticProviderConfig = NonNullable<Awaited<ReturnType<typeof loadTenantAiProviderConfig>>>;
@@ -77,6 +79,11 @@ export type SemanticProviderAttempt = {
   upstreamCode?: string | number;
   upstreamStatus?: string;
   failureStage?: string;
+  reason?: string;
+  safeDetail?: string;
+  retriable?: boolean;
+  action?: string;
+  validationIssues?: Array<{ path: string; code: string }>;
 };
 
 export class SemanticOperationPlanInferenceError extends Error {
@@ -92,6 +99,7 @@ export class SemanticOperationPlanInferenceError extends Error {
 export async function parseSemanticOperationPlan(input: {
   env: ApiBindings;
   tenantId: string;
+  traceId: string;
   rawMessage: string;
   conversation: Conversation;
   menu: TodayMenuPayload;
@@ -147,7 +155,68 @@ export async function parseSemanticOperationPlan(input: {
   });
 
   const router = new AiProviderRouter([new GeminiAdapter(), new OpenRouterAdapter()]);
-  const execution = await generateSemanticObject<SemanticOperationPlan>({ env: input.env, tenantId: input.tenantId, router, task });
+  const execution = await generateSemanticObject<SemanticOperationPlan>({
+    env: input.env,
+    tenantId: input.tenantId,
+    router,
+    task,
+    validateOutput: validateSemanticOperationPlanOutput,
+    onAttemptStarted: (provider) => {
+      logEvent("debug", "ai.provider.attempt_started", `Iniciando un intento con ${provider.providerId}.`, {
+        environment: input.env.APP_ENV,
+        traceId: input.traceId,
+        tenantId: input.tenantId,
+        conversationId: input.conversation.id,
+        conversationState: input.conversation.state,
+        provider: provider.providerId,
+        model: provider.defaultModel,
+        schemaName: "semantic_order_operation_plan",
+        schemaVersion: 2,
+      });
+    },
+    onAttemptCompleted: (attempt) => {
+      logEvent(
+        attempt.outcome === "succeeded" ? "info" : "warn",
+        attempt.outcome === "succeeded" ? "ai.provider.attempt_succeeded" : "ai.provider.attempt_failed",
+        attempt.outcome === "succeeded"
+          ? `${attempt.provider} generó una respuesta estructurada válida.`
+          : `${attempt.provider} no pudo generar una respuesta estructurada válida.`,
+        {
+          environment: input.env.APP_ENV,
+          traceId: input.traceId,
+          tenantId: input.tenantId,
+          conversationId: input.conversation.id,
+          provider: attempt.provider,
+          model: attempt.model,
+          durationMs: attempt.durationMs,
+          error: attempt.outcome === "failed" ? {
+            code: attempt.errorCode,
+            httpStatus: attempt.upstreamHttpStatus,
+            upstreamCode: attempt.upstreamCode,
+            upstreamStatus: attempt.upstreamStatus,
+            stage: attempt.failureStage,
+            reason: attempt.reason,
+            safeDetail: attempt.safeDetail,
+            retriable: attempt.retriable,
+            action: attempt.action,
+            validationIssues: attempt.validationIssues,
+          } : undefined,
+        },
+      );
+    },
+    onFallbackStarted: (fromProvider, toProvider, reason) => {
+      logEvent("warn", "ai.fallback.started", `Se intentará ${toProvider.providerId} porque ${fromProvider ?? "el proveedor principal"} falló.`, {
+        environment: input.env.APP_ENV,
+        traceId: input.traceId,
+        tenantId: input.tenantId,
+        conversationId: input.conversation.id,
+        fromProvider,
+        toProvider: toProvider.providerId,
+        toModel: toProvider.defaultModel,
+        fallbackReason: safeProviderFailure(reason),
+      });
+    },
+  });
   return { providerId: execution.providerId, fallbackFromProviderId: execution.fallbackFromProviderId, plan: execution.output, attempts: execution.attempts };
 }
 
@@ -228,7 +297,6 @@ const semanticOperationPlanSchema = {
     confidence: { type: "number", minimum: 0, maximum: 1 },
     operations: {
       type: "array",
-      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -280,6 +348,14 @@ async function generateSemanticObject<T>(input: {
   tenantId: string;
   router: AiProviderRouter;
   task: ReturnType<typeof createObjectTask>;
+  validateOutput?: (value: unknown) => T;
+  onAttemptStarted?: (provider: SemanticProviderConfig) => void;
+  onAttemptCompleted?: (attempt: SemanticProviderAttempt) => void;
+  onFallbackStarted?: (
+    fromProvider: "gemini" | "openrouter" | undefined,
+    toProvider: SemanticProviderConfig,
+    reason: unknown,
+  ) => void;
 }): Promise<{ providerId: "gemini" | "openrouter"; output: T; fallbackFromProviderId?: "gemini" | "openrouter"; attempts: SemanticProviderAttempt[] }> {
   const provider = await loadTenantAiProviderConfig({ env: input.env, tenantId: input.tenantId });
   const attempts: SemanticProviderAttempt[] = [];
@@ -302,6 +378,7 @@ async function generateSemanticObject<T>(input: {
     excludeProviderId: provider?.providerId,
   });
   if (fallbackProvider && shouldAttemptFallback(primaryError)) {
+    input.onFallbackStarted?.(provider?.providerId, fallbackProvider, primaryError);
     try {
       const output = await runProviderAttempt<T>(input, fallbackProvider, attempts);
       return {
@@ -319,23 +396,40 @@ async function generateSemanticObject<T>(input: {
 }
 
 async function runProviderAttempt<T>(
-  input: { router: AiProviderRouter; task: ReturnType<typeof createObjectTask> },
+  input: {
+    router: AiProviderRouter;
+    task: ReturnType<typeof createObjectTask>;
+    validateOutput?: (value: unknown) => T;
+    onAttemptStarted?: (provider: SemanticProviderConfig) => void;
+    onAttemptCompleted?: (attempt: SemanticProviderAttempt) => void;
+  },
   provider: SemanticProviderConfig,
   attempts: SemanticProviderAttempt[],
 ): Promise<T> {
   const startedAt = Date.now();
+  input.onAttemptStarted?.(provider);
   try {
-    const output = await input.router.generateObject<T>({ provider, task: input.task });
-    attempts.push({ provider: provider.providerId, model: provider.defaultModel, outcome: "succeeded", durationMs: Date.now() - startedAt });
+    const rawOutput = await input.router.generateObject<unknown>({ provider, task: input.task });
+    const output = input.validateOutput ? input.validateOutput(rawOutput) : rawOutput as T;
+    const attempt: SemanticProviderAttempt = {
+      provider: provider.providerId,
+      model: provider.defaultModel,
+      outcome: "succeeded",
+      durationMs: Date.now() - startedAt,
+    };
+    attempts.push(attempt);
+    input.onAttemptCompleted?.(attempt);
     return output;
   } catch (error) {
-    attempts.push({
+    const attempt: SemanticProviderAttempt = {
       provider: provider.providerId,
       model: provider.defaultModel,
       outcome: "failed",
       durationMs: Date.now() - startedAt,
       ...safeProviderFailure(error),
-    });
+    };
+    attempts.push(attempt);
+    input.onAttemptCompleted?.(attempt);
     throw error;
   }
 }
@@ -364,6 +458,15 @@ function safeProviderFailure(error: unknown): Omit<SemanticProviderAttempt, "pro
       upstreamCode: typeof cause.upstreamCode === "string" || typeof cause.upstreamCode === "number" ? cause.upstreamCode : undefined,
       upstreamStatus: typeof cause.upstreamStatus === "string" ? cause.upstreamStatus : undefined,
       failureStage: typeof cause.stage === "string" ? cause.stage : undefined,
+      reason: typeof cause.reason === "string" ? cause.reason : undefined,
+      safeDetail: typeof cause.safeDetail === "string" ? cause.safeDetail : undefined,
+      retriable: typeof cause.retriable === "boolean" ? cause.retriable : undefined,
+      action: typeof cause.action === "string" ? cause.action : undefined,
+      validationIssues: Array.isArray(cause.validationIssues)
+        ? cause.validationIssues.flatMap((issue) => isRecord(issue) && typeof issue.path === "string" && typeof issue.code === "string"
+          ? [{ path: issue.path, code: issue.code }]
+          : [])
+        : undefined,
     };
   }
 
@@ -375,4 +478,84 @@ function safeProviderFailure(error: unknown): Omit<SemanticProviderAttempt, "pro
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+const semanticOperationTypeSchema = z.enum([
+  "add_product",
+  "remove_draft_line",
+  "set_line_quantity",
+  "set_line_notes",
+  "set_line_configuration",
+  "set_fulfillment",
+  "set_payment_method",
+  "set_delivery_address",
+  "set_billing",
+  "continue_checkout",
+  "confirm_order",
+  "edit_order",
+  "cancel_order",
+  "reuse_billing_profile",
+  "change_billing",
+  "switch_to_electronic_billing",
+  "accept_cash_fallback",
+  "keep_transfer",
+  "request_human",
+  "show_menu",
+]);
+
+const semanticConfigurationSelectionSchema = z.object({
+  optionId: z.string(),
+  valueIds: z.array(z.string()).max(10).optional(),
+  textValue: z.string().nullable().optional(),
+}).strict();
+
+const semanticBillingSchema = z.object({
+  type: z.enum(["normal", "electronic"]),
+  fullName: z.string().nullable().optional(),
+  billingAddress: z.string().nullable().optional(),
+  legalName: z.string().nullable().optional(),
+  taxId: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+}).strict();
+
+const semanticOperationSchema = z.object({
+  type: semanticOperationTypeSchema,
+  menuItemId: z.string().nullable().optional(),
+  draftOrderItemId: z.string().nullable().optional(),
+  quantity: z.number().min(1).max(100).nullable().optional(),
+  configuration: z.array(semanticConfigurationSelectionSchema).optional(),
+  notes: z.array(z.string()).max(8).nullable().optional(),
+  fulfillmentType: z.enum(["delivery", "pickup"]).nullable().optional(),
+  paymentMethod: z.enum(["cash", "transfer"]).nullable().optional(),
+  addressText: z.string().nullable().optional(),
+  addressDetails: z.string().nullable().optional(),
+  billing: semanticBillingSchema.nullable().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+}).strict();
+
+const semanticOperationPlanRuntimeSchema = z.object({
+  confidence: z.number().min(0).max(1),
+  operations: z.array(semanticOperationSchema).max(12),
+}).strict();
+
+function validateSemanticOperationPlanOutput(value: unknown): SemanticOperationPlan {
+  const parsed = semanticOperationPlanRuntimeSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  throw new AiRouterError(
+    "provider_invalid_response",
+    "AI provider returned JSON that does not match the semantic operation plan schema.",
+    {
+      stage: "output_schema_validation",
+      reason: "output_schema_invalid",
+      retriable: true,
+      action: "try_fallback_or_review_prompt",
+      validationIssues: parsed.error.issues.slice(0, 12).map((issue) => ({
+        path: issue.path.join("."),
+        code: issue.code,
+      })),
+    },
+  );
 }

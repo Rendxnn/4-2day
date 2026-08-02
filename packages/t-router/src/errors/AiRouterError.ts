@@ -6,6 +6,7 @@ export type AiRouterErrorCode =
   | "provider_timeout"
   | "provider_unavailable"
   | "provider_quota_exceeded"
+  | "provider_invalid_request"
   | "provider_invalid_response"
   | "provider_unknown_error"
   | "router_invalid_task";

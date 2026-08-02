@@ -590,7 +590,7 @@ export function updateOrderStatus(
 }
 
 export function acceptOrder(tenantSlug: string, orderId: string, payload: AcceptOrderRequest = {}) {
-  return request(`/${tenantSlug}/orders/${orderId}/accept`, {
+  return request<OrderSummary>(`/${tenantSlug}/orders/${orderId}/accept`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -612,7 +612,7 @@ export function retryOrderCustomerNotification(
   orderId: string,
   type: OrderCustomerNotificationType | RetryOrderCustomerNotificationRequest["type"],
 ) {
-  return request(`/${tenantSlug}/orders/${orderId}/customer-notification/retry`, {
+  return request<OrderSummary>(`/${tenantSlug}/orders/${orderId}/customer-notification/retry`, {
     method: "POST",
     body: JSON.stringify({ type }),
   });

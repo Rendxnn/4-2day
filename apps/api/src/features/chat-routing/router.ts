@@ -18,7 +18,7 @@ import { resolveEntryFlowAction } from "./entry-flow";
 import { handleCustomerOrderStatus } from "./order-status";
 import { buildMenuText, buildWelcomeMenuText } from "../menu/service";
 import { isActiveOrderState, loadCurrentMenu } from "./shared/helpers";
-import { logRoutingDiagnostic } from "./shared/tracing";
+import { logRoutingDiagnostic, markRoutingDecision } from "./shared/tracing";
 import {
   tryHandleBillingReuseConfirmation,
   tryHandleElectronicBillingInfo,
@@ -28,6 +28,7 @@ import {
 } from "./checkout";
 import { tryHandlePendingProductConfiguration } from "./guided/product-configuration";
 import type { RouteInboundMessageInput } from "./shared/types";
+import { logEvent } from "../../lib/observability/logger.ts";
 export type { RouteInboundMessageInput } from "./shared/types";
 
 export async function routeInboundMessage(input: RouteInboundMessageInput): Promise<void> {
@@ -42,7 +43,9 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   });
 
   if (!input.tenant.automationEnabled) {
-    console.info("tenant.automation_disabled", {
+    logEvent("info", "tenant.automation_disabled", "La automatización del tenant está desactivada.", {
+      environment: input.env.APP_ENV,
+      traceId: input.traceId,
       tenantId: input.tenant.id,
       providerMessageId: input.message.providerMessageId,
     });
@@ -56,7 +59,9 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   });
 
   if (!input.conversation.automationEnabled || input.conversation.state === "manual") {
-    console.info("conversation.manual_auto_reply_skipped", {
+    logEvent("info", "conversation.manual_auto_reply_skipped", "La conversación está en modo manual; no se enviará respuesta automática.", {
+      environment: input.env.APP_ENV,
+      traceId: input.traceId,
       tenantId: input.tenant.id,
       conversationId: input.conversation.id,
       providerMessageId: input.message.providerMessageId,
@@ -73,6 +78,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   // A first natural-language order must always reach the semantic planner.
   const entryAction = resolveEntryFlowAction(signals);
   if (entryAction === "handoff") {
+    markRoutingDecision(input, "manual_handoff", "explicit_human_request");
     await moveToManual(input, {
       type: "support_requested",
       manualReason: "explicit_human_request",
@@ -84,11 +90,13 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (signals.wantsOrderStatus) {
+    markRoutingDecision(input, "order_status", "explicit_order_status_request");
     await handleCustomerOrderStatus(input);
     return;
   }
 
   if (entryAction === "show_menu") {
+    markRoutingDecision(input, "show_menu", signals.isGreeting ? "greeting" : "explicit_menu_request");
     // "Hola" or "menú" must never pretend that a new order started while a
     // checkout is still waiting for a required answer. The old behavior showed
     // the welcome menu but retained the billing/payment state, so the next
@@ -116,6 +124,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (input.conversation.state === "awaiting_transfer_proof") {
+    markRoutingDecision(input, "transfer_proof", "conversation_awaiting_transfer_proof");
     const handledTransferProof = await tryHandleTransferProofBranch(input);
     if (handledTransferProof) {
       return;
@@ -126,6 +135,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   // (for example, "transferencia" or "1 y 2"). Handle them before asking the
   // semantic model so a valid answer cannot be lost to a low-confidence plan.
   if (input.conversation.state === "awaiting_payment_method") {
+    markRoutingDecision(input, "payment_method", "conversation_awaiting_payment_method");
     const handledPaymentMethod = await tryHandlePaymentMethod(input, signals);
     if (handledPaymentMethod) {
       return;
@@ -136,6 +146,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   // Resolve them before the semantic fallback so a valid full name never gets
   // discarded because an LLM plan was low confidence or unavailable.
   if (input.conversation.state === "awaiting_billing_reuse_confirmation") {
+    markRoutingDecision(input, "billing_reuse", "conversation_awaiting_billing_reuse");
     const handledBillingReuse = await tryHandleBillingReuseConfirmation(input, {
       confirmation: signals.confirmation,
       wantsElectronicBilling: signals.wantsElectronicBilling,
@@ -147,6 +158,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (input.conversation.state === "awaiting_normal_billing_info") {
+    markRoutingDecision(input, "normal_billing", "conversation_awaiting_normal_billing");
     const handledNormalBilling = await tryHandleNormalBillingInfo(input, {
       wantsElectronicBilling: signals.wantsElectronicBilling,
     });
@@ -156,6 +168,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (input.conversation.state === "awaiting_electronic_billing_info") {
+    markRoutingDecision(input, "electronic_billing", "conversation_awaiting_electronic_billing");
     const handledElectronicBilling = await tryHandleElectronicBillingInfo(input);
     if (handledElectronicBilling) {
       return;
@@ -163,12 +176,14 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (input.conversation.state === "awaiting_product_configuration") {
+    markRoutingDecision(input, "product_configuration", "conversation_awaiting_product_configuration");
     const handledConfiguration = await tryHandlePendingProductConfiguration(input, { signals });
     if (handledConfiguration) {
       return;
     }
   }
 
+  markRoutingDecision(input, "semantic_order", "natural_language_requires_semantic_plan");
   if (await trySemanticFallback(input)) {
     return;
   }
@@ -178,6 +193,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
     (input.conversation.state === "awaiting_confirmation" && input.message.type === "location")
   ) {
     const addressKind = classifyDeliveryAddressText(normalizedText);
+    markRoutingDecision(input, "delivery_address", "semantic_plan_did_not_handle_address");
     const handledAddress = await tryHandleDeliveryAddress(input, {
       looksLikeAddress: input.message.type === "location" || addressKind === "structured_address",
       cannotShareLocation: addressKind === "location_limitation",
@@ -189,6 +205,7 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (input.message.type === "location" && input.message.location) {
+    markRoutingDecision(input, "location_captured", "location_received_outside_address_step");
     await sendAndLogText(
       input,
       buildLocationCapturedForLaterMessage(),
@@ -197,20 +214,24 @@ export async function routeInboundMessage(input: RouteInboundMessageInput): Prom
   }
 
   if (input.conversation.state === "awaiting_restaurant_confirmation") {
+    markRoutingDecision(input, "restaurant_confirmation_wait", "conversation_awaiting_restaurant_confirmation");
     await sendAndLogText(input, buildRestaurantReviewPendingMessage());
     return;
   }
 
   if (input.conversation.state === "awaiting_transfer_proof") {
+    markRoutingDecision(input, "transfer_proof_clarification", "transfer_proof_not_resolved");
     await handleTransferProofClarification(input);
     return;
   }
 
   if (input.conversation.state === "awaiting_transfer_fallback_payment_method") {
+    markRoutingDecision(input, "transfer_fallback_clarification", "transfer_fallback_not_resolved");
     await handleTransferFallbackPaymentMethodClarification(input);
     return;
   }
 
+  markRoutingDecision(input, "clarification", "validation_failed_repeatedly");
   await handleClarification(input, buildClarificationPrompt(input.conversation.state), "validation_failed_repeatedly");
 }
 

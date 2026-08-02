@@ -44,6 +44,14 @@ export type OutboundImageMessage = {
 };
 
 export type OutboundMessageResult = {
+  ok: boolean;
+  httpStatus: number;
   providerMessageId?: string;
+  error?: {
+    code?: string | number;
+    subcode?: string | number;
+    type?: string;
+    safeDetail?: string;
+  };
   raw: unknown;
 };

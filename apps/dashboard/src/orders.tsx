@@ -416,8 +416,12 @@ export function OrdersView({ focusOrderId = "", locale, menuItems, onFocusOrderH
   async function handleAccept(orderId: string) {
     setActionKey(`accept:${orderId}`);
     try {
-      await acceptOrder(tenantSlug, orderId);
-      onNotify(locale === "en" ? "Order confirmed and customer notified." : "Pedido confirmado y cliente notificado.");
+      const updatedOrder = await acceptOrder(tenantSlug, orderId);
+      onNotify(updatedOrder.customerNotificationStatus === "failed"
+        ? (locale === "en"
+            ? "Order confirmed, but WhatsApp could not notify the customer. Review the alert and retry."
+            : "Pedido confirmado, pero WhatsApp no pudo notificar al cliente. Revisa la alerta y reintenta.")
+        : (locale === "en" ? "Order confirmed and customer notified." : "Pedido confirmado y cliente notificado."));
       await refreshAfterMutation(orderId);
     } catch (error) {
       onNotify(getDashboardErrorMessage(error, locale === "en" ? "Could not confirm the order." : "No se pudo confirmar el pedido.", locale));
@@ -430,8 +434,12 @@ export function OrdersView({ focusOrderId = "", locale, menuItems, onFocusOrderH
     const type = status === "needs_customer_replacement" ? "out_of_stock" : "accepted";
     setActionKey(`retry:${orderId}`);
     try {
-      await retryOrderCustomerNotification(tenantSlug, orderId, type);
-      onNotify(locale === "en" ? "Notification sent again to the customer." : "Notificacion reenviada al cliente.");
+      const updatedOrder = await retryOrderCustomerNotification(tenantSlug, orderId, type);
+      onNotify(updatedOrder.customerNotificationStatus === "failed"
+        ? (locale === "en"
+            ? "WhatsApp rejected the retry. Check the integration credentials."
+            : "WhatsApp rechazó el reintento. Revisa las credenciales de la integración.")
+        : (locale === "en" ? "Notification sent again to the customer." : "Notificacion reenviada al cliente."));
       await refreshAfterMutation(orderId);
     } catch (error) {
       onNotify(getDashboardErrorMessage(error, locale === "en" ? "Could not retry the notification." : "No se pudo reintentar la notificacion.", locale));

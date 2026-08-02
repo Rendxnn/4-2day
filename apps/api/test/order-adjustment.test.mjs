@@ -8,6 +8,7 @@ const operationPlanPath = new URL("../src/features/chat-routing/semantic/operati
 const outOfStockRoutePath = new URL("../src/features/dashboard/routes/orders/out-of-stock.ts", import.meta.url);
 const notificationsPath = new URL("../src/features/dashboard/support/notifications.ts", import.meta.url);
 const tracingPath = new URL("../src/features/chat-routing/shared/tracing.ts", import.meta.url);
+const dashboardPath = new URL("../../dashboard/src/orders.tsx", import.meta.url);
 
 test("the out-of-stock prompt groups every unavailable item and uses natural-language adjustments", async () => {
   const source = await readFile(notificationsPath, "utf8");
@@ -116,13 +117,26 @@ test("a pending product configuration stays in the ID-based semantic context unt
   assert.match(orderSource, /contextAfterSemanticPlan/);
 });
 
-test("routing diagnostics serialize one semantic plan and its transaction outcome for Worker tail", async () => {
+test("routing diagnostics emit structured events for the semantic plan and its transaction outcome", async () => {
   const tracing = await readFile(tracingPath, "utf8");
   const semanticOrder = await readFile(semanticOrderPath, "utf8");
-  assert.match(tracing, /console\.info\(JSON\.stringify/);
+  assert.match(tracing, /logEvent\(level, event/);
+  assert.doesNotMatch(tracing, /console\.info\(JSON\.stringify/);
   assert.match(semanticOrder, /semantic_operation_plan\.completed/);
   assert.match(semanticOrder, /semantic_operation_plan\.applied/);
   assert.match(semanticOrder, /semantic_operation_plan\.transaction_failed/);
   assert.match(semanticOrder, /semanticOperationPlanFailureDiagnostics/);
   assert.match(semanticOrder, /handleSemanticProviderFailure/);
+});
+
+test("dashboard notifications distinguish an accepted order from a failed WhatsApp delivery", async () => {
+  const notifications = await readFile(notificationsPath, "utf8");
+  const dashboard = await readFile(dashboardPath, "utf8");
+
+  assert.match(notifications, /const notificationSent = result\.ok && Boolean\(result\.providerMessageId\)/);
+  assert.match(notifications, /customer_notification_error: notificationError/);
+  assert.match(notifications, /httpStatus: result\.httpStatus/);
+  assert.match(notifications, /error: result\.error \?\? null/);
+  assert.match(dashboard, /Pedido confirmado, pero WhatsApp no pudo notificar al cliente/);
+  assert.match(dashboard, /WhatsApp rechazó el reintento/);
 });
