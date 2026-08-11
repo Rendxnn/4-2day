@@ -6,6 +6,7 @@ import { DeliveryCoverageSection } from "./DeliveryCoverageSection";
 import { MenuUploadSection } from "./MenuUploadSection";
 import { PaymentSettingsSection } from "./PaymentSettingsSection";
 import { RestaurantKnowledgeSection } from "./RestaurantKnowledgeSection";
+import { RestaurantPublicProfileSection } from "./RestaurantPublicProfileSection";
 import type { ConfigurationAccess, PaymentConfigurationSnapshot } from "./paymentConfiguration.types";
 
 export function ConfigurationView({
@@ -145,6 +146,14 @@ export function ConfigurationView({
 
       <div className="border-t border-[rgba(255,242,227,0.12)] pt-8">
         <RestaurantKnowledgeSection tenantSlug={tenantSlug} />
+      </div>
+
+      <div className="border-t border-[rgba(255,242,227,0.12)] pt-8">
+        <RestaurantPublicProfileSection
+          locale={locale}
+          onNotify={onNotify}
+          tenantSlug={tenantSlug}
+        />
       </div>
     </section>
   );

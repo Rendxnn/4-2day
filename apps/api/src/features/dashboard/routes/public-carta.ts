@@ -35,6 +35,10 @@ publicCartaRoutes.get("/public/:tenantSlug/carta", async (c) => {
       name: context.tenant.name ?? context.tenant.slug,
       slug: context.tenant.slug,
     },
+    experience: {
+      mode: context.tenant.automation_enabled === false ? "standalone" : "connected",
+      whatsappAutomationEnabled: context.tenant.automation_enabled !== false,
+    },
     requestedDate: context.date,
     generatedAt: new Date().toISOString(),
     location: context.location ? mapLocation(context.location) : undefined,
@@ -67,7 +71,9 @@ publicCartaRoutes.post("/public/:tenantSlug/carta/concierge", async (c) => {
     restaurantName: context.tenant.name ?? context.tenant.slug,
     question,
     history: parseCartaConciergeHistory(body?.history),
+    orderingMode: context.tenant.automation_enabled === false ? "standalone" : "connected",
     menuItems: context.items.map((item) => ({
+      menuItemId: item.id,
       id: item.productId,
       name: item.displayName ?? item.product?.name ?? "Producto",
       description: item.product?.description,
@@ -78,7 +84,10 @@ publicCartaRoutes.post("/public/:tenantSlug/carta/concierge", async (c) => {
   });
 
   c.header("Cache-Control", "no-store");
-  return c.json({ answer: reply.answer } satisfies PublicCartaConciergeReply);
+  return c.json({
+    answer: reply.answer,
+    recommendedItemIds: reply.recommendedItemIds,
+  } satisfies PublicCartaConciergeReply);
 });
 
 async function loadPublicCartaContext(
@@ -97,7 +106,7 @@ async function loadPublicCartaContext(
     schema: "control",
     table: "tenants",
     query: {
-      select: "id,name,slug,schema_name,timezone",
+      select: "id,name,slug,schema_name,timezone,automation_enabled",
       slug: `eq.${tenantSlug}`,
       status: "eq.active",
       limit: 1,

@@ -18,12 +18,15 @@ import type {
   ProductCategory,
   PublicCartaPayload,
   PublicCartaConciergeReply,
+  RestaurantPublicProfilePayload,
+  RestaurantPublicProfileSettings,
   RejectOutOfStockOrderRequest,
   RestaurantKnowledgeDocument,
   RestaurantKnowledgeSnapshot,
   RetryOrderCustomerNotificationRequest,
   TodayMenuPayload,
   UpdateDeliveryCoverageSettingsRequest,
+  UpdateRestaurantPublicProfileSettingsRequest,
 } from "@42day/types";
 import { getAccessToken } from "./auth";
 
@@ -167,6 +170,7 @@ export type AdminRestaurant = {
   createdAt?: string;
   updatedAt?: string;
   cartaUrlPath: string;
+  publicProfileUrlPath: string;
   defaultPassword: string;
   location?: {
     id: string;
@@ -498,6 +502,10 @@ export function getPublicCarta(tenantSlug: string) {
   return publicRequest<PublicCartaPayload>(`/public/${tenantSlug}/carta`);
 }
 
+export function getPublicRestaurantProfile(tenantSlug: string) {
+  return publicRequest<RestaurantPublicProfilePayload>(`/public/${tenantSlug}/profile`);
+}
+
 export function askPublicCartaConcierge(
   tenantSlug: string,
   input: {
@@ -521,6 +529,20 @@ export function updateRestaurantKnowledge(
 ) {
   return request<RestaurantKnowledgeSnapshot>(`/${tenantSlug}/settings/carta-concierge`, {
     method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getRestaurantPublicProfileSettings(tenantSlug: string) {
+  return request<RestaurantPublicProfileSettings>(`/${tenantSlug}/settings/public-profile`);
+}
+
+export function updateRestaurantPublicProfileSettings(
+  tenantSlug: string,
+  input: UpdateRestaurantPublicProfileSettingsRequest,
+) {
+  return request<RestaurantPublicProfileSettings>(`/${tenantSlug}/settings/public-profile`, {
+    method: "PATCH",
     body: JSON.stringify(input),
   });
 }

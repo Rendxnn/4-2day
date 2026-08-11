@@ -68,6 +68,15 @@ export type LocationRow = {
   request_location_message?: string | null;
   written_address_fallback_message?: string | null;
   out_of_coverage_message?: string | null;
+  public_profile_enabled?: boolean | null;
+  public_profile_headline?: string | null;
+  whatsapp_contact?: string | null;
+  instagram_url?: string | null;
+  facebook_url?: string | null;
+  tiktok_url?: string | null;
+  website_url?: string | null;
+  maps_url?: string | null;
+  survey_url?: string | null;
   is_active: boolean;
 };
 

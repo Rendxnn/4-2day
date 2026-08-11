@@ -51,4 +51,6 @@ export type RestaurantKnowledgeSnapshot = {
 
 export type PublicCartaConciergeReply = {
   answer: string;
+  /** IDs from the currently published menu; safe for the client to render. */
+  recommendedItemIds?: string[];
 };

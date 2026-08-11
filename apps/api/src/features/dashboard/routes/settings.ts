@@ -26,6 +26,11 @@ import {
 import { linkKnowledgeToCatalog, parseRestaurantKnowledgeDocument, RestaurantKnowledgeValidationError } from "../../carta-concierge/knowledge";
 import { loadRestaurantKnowledgeSnapshot, saveRestaurantKnowledgeSnapshot } from "../../carta-concierge/repository";
 import { selectProducts } from "../support/catalog";
+import {
+  mapRestaurantPublicProfileSettings,
+  parseRestaurantPublicProfileSettingsUpdate,
+  toRestaurantPublicProfileDatabaseValues,
+} from "../../public-profile/service";
 
 export const settingsDashboardRoutes = new Hono<{
   Bindings: ApiBindings;
@@ -173,6 +178,80 @@ settingsDashboardRoutes.put("/:tenantSlug/settings/carta-concierge", async (c) =
     }
     throw error;
   }
+});
+
+settingsDashboardRoutes.get("/:tenantSlug/settings/public-profile", async (c) => {
+  const tenant = c.get("tenant");
+  if (!(await requireManagerRole(c))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const [location] = await createSupabaseRestClient(c.env).select<LocationRow>({
+    schema: tenant.schema_name,
+    table: "locations",
+    query: {
+      select: [
+        "id", "name", "phone", "is_active", "public_profile_enabled",
+        "public_profile_headline", "whatsapp_contact", "instagram_url",
+        "facebook_url", "tiktok_url", "website_url", "maps_url", "survey_url",
+      ].join(","),
+      is_active: "eq.true",
+      limit: 1,
+    },
+  });
+
+  return location
+    ? c.json(mapRestaurantPublicProfileSettings(location, tenant.slug))
+    : c.json({ error: "active_location_not_found" }, 404);
+});
+
+settingsDashboardRoutes.patch("/:tenantSlug/settings/public-profile", async (c) => {
+  const tenant = c.get("tenant");
+  if (!(await requireManagerRole(c))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  const body = parseRestaurantPublicProfileSettingsUpdate(await c.req.json().catch(() => undefined));
+  if (!body) {
+    return c.json({ error: "invalid_public_profile_settings" }, 400);
+  }
+
+  const supabase = createSupabaseRestClient(c.env);
+  const [location] = await supabase.select<LocationRow>({
+    schema: tenant.schema_name,
+    table: "locations",
+    query: {
+      select: "id,name,phone,is_active",
+      is_active: "eq.true",
+      limit: 1,
+    },
+  });
+  if (!location) return c.json({ error: "active_location_not_found" }, 404);
+
+  await supabase.update({
+    schema: tenant.schema_name,
+    table: "locations",
+    query: { id: `eq.${location.id}` },
+    values: toRestaurantPublicProfileDatabaseValues(body),
+  });
+
+  const [updated] = await supabase.select<LocationRow>({
+    schema: tenant.schema_name,
+    table: "locations",
+    query: {
+      select: [
+        "id", "name", "phone", "is_active", "public_profile_enabled",
+        "public_profile_headline", "whatsapp_contact", "instagram_url",
+        "facebook_url", "tiktok_url", "website_url", "maps_url", "survey_url",
+      ].join(","),
+      id: `eq.${location.id}`,
+      limit: 1,
+    },
+  });
+
+  return updated
+    ? c.json(mapRestaurantPublicProfileSettings(updated, tenant.slug))
+    : c.json({ error: "active_location_not_found" }, 404);
 });
 
 settingsDashboardRoutes.get("/:tenantSlug/settings/delivery-coverage", async (c) => {

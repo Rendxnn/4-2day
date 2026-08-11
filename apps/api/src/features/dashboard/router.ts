@@ -12,6 +12,7 @@ import { menuDashboardRoutes } from "./routes/menu";
 import { notificationsDashboardRoutes } from "./routes/notifications";
 import { ordersDashboardRoutes } from "./routes/orders";
 import { publicCartaRoutes } from "./routes/public-carta";
+import { publicProfileRoutes } from "./routes/public-profile";
 import { settingsDashboardRoutes } from "./routes/settings";
 import { uploadsDashboardRoutes } from "./routes/uploads";
 
@@ -22,6 +23,7 @@ export const dashboardRoutes = new Hono<{
 
 dashboardRoutes.route("/", adminDashboardRoutes);
 dashboardRoutes.route("/", publicCartaRoutes);
+dashboardRoutes.route("/", publicProfileRoutes);
 dashboardRoutes.use("/:tenantSlug/*", tenantAccessMiddleware);
 dashboardRoutes.route("/", ordersDashboardRoutes);
 dashboardRoutes.route("/", conversationsDashboardRoutes);

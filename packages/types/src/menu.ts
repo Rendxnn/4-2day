@@ -108,9 +108,65 @@ export type PublicCartaPayload = {
     name: string;
     slug: string;
   };
+  experience?: {
+    /**
+     * `standalone` turns the public carta and its concierge into an independent
+     * product when WhatsApp automation is disabled for the restaurant.
+     */
+    mode: "connected" | "standalone";
+    whatsappAutomationEnabled: boolean;
+  };
   requestedDate?: string;
   generatedAt: string;
   location?: Location;
   menu?: Menu;
   items: MenuItem[];
+};
+
+export type RestaurantPublicProfileSettings = {
+  locationId: string;
+  profileEnabled: boolean;
+  headline?: string;
+  contactPhone?: string;
+  whatsappPhone?: string;
+  instagramUrl?: string;
+  facebookUrl?: string;
+  tiktokUrl?: string;
+  websiteUrl?: string;
+  mapsUrl?: string;
+  surveyUrl?: string;
+  publicUrlPath: string;
+  cartaUrlPath: string;
+};
+
+export type UpdateRestaurantPublicProfileSettingsRequest = Omit<
+  RestaurantPublicProfileSettings,
+  "locationId" | "publicUrlPath" | "cartaUrlPath"
+>;
+
+export type RestaurantPublicProfilePayload = {
+  tenant: {
+    name: string;
+    slug: string;
+  };
+  experience: {
+    mode: "connected" | "standalone";
+    whatsappAutomationEnabled: boolean;
+  };
+  headline?: string;
+  location: {
+    name: string;
+    address?: string;
+  };
+  links: {
+    cartaUrlPath: string;
+    phoneUrl?: string;
+    whatsappUrl?: string;
+    instagramUrl?: string;
+    facebookUrl?: string;
+    tiktokUrl?: string;
+    websiteUrl?: string;
+    mapsUrl?: string;
+    surveyUrl?: string;
+  };
 };

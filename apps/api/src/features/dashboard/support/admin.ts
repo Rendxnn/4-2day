@@ -53,6 +53,7 @@ export function mapAdminRestaurant(
     createdAt: tenant.created_at,
     updatedAt: tenant.updated_at,
     cartaUrlPath: `/carta?tenant=${tenant.slug}`,
+    publicProfileUrlPath: `/r/${tenant.slug}`,
     defaultPassword: buildDefaultRestaurantPassword(tenant.slug),
     location: location ? {
       id: location.id,

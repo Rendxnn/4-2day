@@ -312,7 +312,7 @@ adminDashboardRoutes.patch("/admin/restaurants/:tenantId", async (c) => {
     deliveryFeeFixed: body.deliveryFeeFixed,
     pickupEnabled: body.pickupEnabled,
     deliveryEnabled: body.deliveryEnabled,
-    automationEnabled: body.locationAutomationEnabled,
+    automationEnabled: body.locationAutomationEnabled ?? body.automationEnabled,
   });
 
   const restaurants = await listAdminRestaurants(c.env);

@@ -29,6 +29,7 @@ export type CatalogKnowledgeProduct = {
 };
 
 export type PublicCartaKnowledgeItem = {
+  menuItemId: string;
   id?: string;
   name: string;
   description?: string;
@@ -153,14 +154,17 @@ export function buildConciergeFallbackAnswer(input: {
   question: string;
   menuItems: PublicCartaKnowledgeItem[];
   knowledge: RestaurantKnowledgeDocument;
+  orderingMode?: "connected" | "standalone";
 }): string {
   const question = input.question.trim();
   const matchedItem = findMentionedMenuItem(question, input.menuItems);
   const knowledge = findKnowledgeForMenuItem(input.knowledge, matchedItem);
   const normalizedQuestion = normalizeText(question);
 
-  if (/(quiero pedir|hacer pedido|ordenar|domicilio|whatsapp)/.test(normalizedQuestion)) {
-    return "¡De una! Este chat te ayuda a elegir y conocer la carta. Cuando tengas tu favorito, escríbele al restaurante por WhatsApp para tomar el pedido con todos los detalles.";
+  if (/(whatsapp|como (?:puedo |hago para )?pedir|donde (?:puedo )?pedir|por donde (?:puedo )?pedir|quiero pedir|quiero (?:hacer |poner )?(?:un )?pedido|hacer (?:un )?pedido|quiero ordenar)/.test(normalizedQuestion)) {
+    return input.orderingMode === "standalone"
+      ? "¡De una! Este mesero digital te ayuda a elegir y conocer la carta. Cuando tengas tu favorito, consulta con el restaurante el canal disponible para hacer tu pedido."
+      : "¡De una! Este chat te ayuda a elegir y conocer la carta. Cuando tengas tu favorito, escríbele al restaurante por WhatsApp para tomar el pedido con todos los detalles.";
   }
 
   const faq = (input.knowledge.faq ?? []).find((entry) => hasMeaningfulOverlap(normalizedQuestion, normalizeText(entry.question)));
@@ -168,10 +172,10 @@ export function buildConciergeFallbackAnswer(input: {
 
   if (/(alerg|gluten|lactosa|lacteos|vegano|vegetariano)/.test(normalizedQuestion)) {
     if (matchedItem && knowledge?.allergens && knowledge.allergens.length > 0) {
-      return `Sobre ${matchedItem.name}: el restaurante reporta ${joinNatural(knowledge.allergens)}. Si tienes una alergia importante, confírmala también por WhatsApp antes de pedirlo.`;
+      return `Sobre ${matchedItem.name}: el restaurante reporta ${joinNatural(knowledge.allergens)}. Si tienes una alergia importante, confírmala también directamente con el restaurante antes de pedirlo.`;
     }
     if (matchedItem) {
-      return `No tengo alérgenos confirmados para ${matchedItem.name}. Para una alergia o restricción importante, mejor confírmalo directamente con el restaurante por WhatsApp antes de hacer el pedido.`;
+      return `No tengo alérgenos confirmados para ${matchedItem.name}. Para una alergia o restricción importante, mejor confírmalo directamente con el restaurante antes de hacer el pedido.`;
     }
     return "Puedo revisar alérgenos por plato si me dices cuál estás mirando. Si tu alergia es importante, confirma siempre con el restaurante antes de pedir.";
   }
@@ -185,7 +189,7 @@ export function buildConciergeFallbackAnswer(input: {
 
   if (/(picante|picoso|aj[ií]|salsa)/.test(normalizedQuestion)) {
     if (matchedItem && knowledge?.spicyOptions && knowledge.spicyOptions.length > 0) {
-      return `Con ${matchedItem.name} puedes ${joinNatural(knowledge.spicyOptions)}. Si te gusta el fuego, vale mucho la pena preguntarlo por WhatsApp al momento de pedir.`;
+      return `Con ${matchedItem.name} puedes ${joinNatural(knowledge.spicyOptions)}. Si te gusta el fuego, vale mucho la pena confirmarlo con el restaurante al momento de pedir.`;
     }
     if (matchedItem && knowledge?.pairings && knowledge.pairings.length > 0) {
       return `${matchedItem.name} suele ir muy bien con ${joinNatural(knowledge.pairings)}. Sobre picante no tengo una opción confirmada, así que es mejor validarla con el restaurante.`;
@@ -203,8 +207,20 @@ export function buildConciergeFallbackAnswer(input: {
     return `Sii, ${matchedItem.name} suena delicioso. ${details.join(" ") || "Está disponible hoy en la carta."} Te lo recomiendo mucho.`;
   }
 
+  const categoryItems = findMentionedCategoryItems(question, input.menuItems);
+  if (categoryItems.length > 0) {
+    const category = categoryItems[0]?.category?.trim() || "esta categoría";
+    const descriptions = categoryItems.slice(0, 3).map((item) => {
+      const description = item.description?.trim();
+      return description
+        ? `${item.name}: ${description}`
+        : `${item.name}, disponible hoy en la carta`;
+    });
+    return `¡Claro que sí! En ${category} hay opciones muy ricas. Te recomiendo ${joinNatural(descriptions)}. Si me dices qué sabores prefieres, te ayudo a escoger entre ellas.`;
+  }
+
   if (input.menuItems.length === 0) {
-    return "Aún no veo platos disponibles en esta carta. Puedes volver a cargarla en un momento o escribirle al restaurante por WhatsApp.";
+    return "Aún no veo platos disponibles en esta carta. Puedes volver a cargarla en un momento o consultar directamente con el restaurante.";
   }
 
   const suggestions = input.menuItems.slice(0, 3).map((item) => item.name);
@@ -218,6 +234,85 @@ export function findMentionedMenuItem(question: string, menuItems: PublicCartaKn
     .filter(({ name }) => name.length >= 3 && normalizedQuestion.includes(name))
     .sort((left, right) => right.name.length - left.name.length);
   return matches[0]?.item;
+}
+
+function findMentionedCategoryItems(
+  question: string,
+  menuItems: PublicCartaKnowledgeItem[],
+): PublicCartaKnowledgeItem[] {
+  const normalizedQuestion = normalizeText(question);
+  const mentionedCategory = menuItems
+    .map((item) => item.category?.trim())
+    .filter((category): category is string => Boolean(category))
+    .sort((left, right) => right.length - left.length)
+    .find((category) => normalizedQuestion.includes(normalizeText(category)));
+
+  if (!mentionedCategory) return [];
+  const normalizedCategory = normalizeText(mentionedCategory);
+  return menuItems.filter((item) => item.category && normalizeText(item.category) === normalizedCategory);
+}
+
+/**
+ * Selects only real, visible menu items for the visual recommendation rail.
+ * The model never supplies IDs, so a hallucinated product cannot become a
+ * clickable card in the public carta.
+ */
+export function selectConciergeRecommendations(input: {
+  question: string;
+  answer: string;
+  menuItems: PublicCartaKnowledgeItem[];
+  knowledge: RestaurantKnowledgeDocument;
+  limit?: number;
+}): PublicCartaKnowledgeItem[] {
+  const limit = Math.max(1, Math.min(input.limit ?? 3, 3));
+  const normalizedQuestion = normalizeText(input.question);
+  const normalizedAnswer = normalizeText(input.answer);
+  const recommendationIntent = /(recom|suger|favorit|popular|vendid|especial|compartir|opcion|que (?:hay|pido|escojo)|cual)/.test(normalizedQuestion);
+
+  const ranked = input.menuItems
+    .map((item, index) => {
+      const normalizedName = normalizeText(item.name);
+      const productKnowledge = findKnowledgeForMenuItem(input.knowledge, item);
+      let score = 0;
+
+      if (normalizedQuestion.includes(normalizedName)) score += 120;
+      if (normalizedAnswer.includes(normalizedName)) score += 100;
+      if (item.category && normalizedQuestion.includes(normalizeText(item.category))) score += 80;
+      if (productKnowledge?.bestseller && recommendationIntent) score += 35;
+      if (recommendationIntent && productKnowledge?.recommendations?.length) score += 18;
+      if (recommendationIntent && productKnowledge?.facts?.length) score += 8;
+      if (/(compartir|personas|porciones|rinde)/.test(normalizedQuestion) && productKnowledge?.serves) score += 30;
+
+      return { index, item, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+
+  if (ranked.length > 0) return ranked.slice(0, limit).map(({ item }) => item);
+  if (!recommendationIntent) return [];
+  return input.menuItems.slice(0, limit);
+}
+
+export function sanitizeCartaConciergeAnswer(value: string, question: string): string {
+  const cleaned = value
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 520);
+  if (shouldMentionOrderingChannel(question)) return cleaned;
+
+  return cleaned
+    .replace(/(?:[.!?]\s*)?(?:si|cuando)\s+(?:ya\s+)?(?:tengas|tienes)[^.!?]{0,90}(?:whatsapp|pedido|pedir)[.!?]?/gi, "")
+    .replace(/(?:[.!?]\s*)?(?:puedes|podemos|contin[uú]a|continuamos|escr[ií]benos)[^.!?]{0,80}(?:por\s+)?whatsapp[^.!?]*[.!?]?/gi, "")
+    .replace(/(?:[.!?]\s*)?consulta[^.!?]{0,60}canal[^.!?]{0,30}(?:pedido|pedir)[^.!?]*[.!?]?/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim();
+}
+
+function shouldMentionOrderingChannel(question: string): boolean {
+  const normalized = question.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /(whatsapp|como (?:puedo |hago para )?pedir|donde (?:puedo )?pedir|por donde (?:puedo )?pedir|quiero pedir|quiero (?:hacer |poner )?(?:un )?pedido|hacer (?:un )?pedido|quiero ordenar)/.test(normalized);
 }
 
 function parseRestaurant(value: unknown, issues: string[]): RestaurantKnowledgeDocument["restaurant"] | undefined {

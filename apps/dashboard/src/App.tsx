@@ -75,6 +75,8 @@ import { PublicInformationPage } from "./marketing/PublicInformationPage";
 import { resolvePublicMarketingPage } from "./marketing/marketingRoutes";
 import { ConfigurationView } from "./features/configuration/ConfigurationView";
 import { PublicCartaConcierge } from "./features/public-carta/PublicCartaConcierge";
+import { PublicCartaProductDetail } from "./features/public-carta/PublicCartaProductDetail";
+import { PublicRestaurantProfilePage } from "./features/public-profile/PublicRestaurantProfilePage";
 import { AnalyticsSection } from "./features/admin/AnalyticsSection";
 import { httpPaymentConfigurationAdapter } from "./features/configuration/paymentConfiguration.http";
 import {
@@ -627,6 +629,21 @@ function isPublicCartaRoute() {
   return window.location.pathname === "/carta" || window.location.pathname.startsWith("/carta/");
 }
 
+function isPublicRestaurantProfileRoute() {
+  return window.location.pathname === "/perfil"
+    || window.location.pathname.startsWith("/r/");
+}
+
+function getPublicRestaurantProfileTenantSlug() {
+  const params = new URLSearchParams(window.location.search);
+  const queryTenant = params.get("tenant") || params.get("restaurante");
+  if (queryTenant) return queryTenant;
+
+  const [, route, tenantSlug] = window.location.pathname.split("/");
+  if (route === "r" && tenantSlug) return tenantSlug;
+  return "demo";
+}
+
 function getPublicCartaTenantSlug() {
   const params = new URLSearchParams(window.location.search);
   const queryTenant = params.get("tenant") || params.get("restaurante");
@@ -649,6 +666,7 @@ export function App() {
   const marketingPage = resolvePublicMarketingPage(window.location.pathname);
 
   if (isPublicCartaRoute()) return <PublicCartaPage />;
+  if (isPublicRestaurantProfileRoute()) return <PublicRestaurantProfilePage tenantSlug={getPublicRestaurantProfileTenantSlug()} />;
   if (marketingPage === "landing") return <LandingPage />;
   if (marketingPage) return <PublicInformationPage page={marketingPage} />;
   return <DashboardApp locale={locale} />;
@@ -1293,6 +1311,9 @@ function PublicCartaPage() {
   const [payload, setPayload] = useState<PublicCartaPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedCartaItem, setSelectedCartaItem] = useState<MenuItem>();
+  const [proactiveCartaItem, setProactiveCartaItem] = useState<MenuItem>();
+  const [conciergePrompt, setConciergePrompt] = useState<{ id: string; text: string }>();
 
   useEffect(() => {
     let active = true;
@@ -1323,6 +1344,28 @@ function PublicCartaPage() {
   );
   const featuredCategories = groups.slice(0, 4);
   const totalMenuItems = payload?.items.length ?? 0;
+  // Keep the public carta compatible while API and dashboard deployments roll
+  // out independently. Older API versions do not include `experience`.
+  const cartaMode = payload?.experience?.mode ?? "connected";
+
+  useEffect(() => {
+    if (!selectedCartaItem) return;
+    const storageKey = `parahoy-carta-nudge:${tenantSlug}`;
+    if (window.sessionStorage.getItem(storageKey) === "shown") return;
+    const timer = window.setTimeout(() => {
+      window.sessionStorage.setItem(storageKey, "shown");
+      setProactiveCartaItem(selectedCartaItem);
+    }, 9_000);
+    return () => window.clearTimeout(timer);
+  }, [selectedCartaItem, tenantSlug]);
+
+  const closeCartaDetail = useCallback(() => setSelectedCartaItem(undefined), []);
+  const askConciergeAboutItem = useCallback((item: MenuItem) => {
+    const name = item.displayName ?? item.product?.name ?? "este plato";
+    setSelectedCartaItem(undefined);
+    setProactiveCartaItem(undefined);
+    setConciergePrompt({ id: crypto.randomUUID(), text: `Cuéntame sobre ${name}` });
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#050403] text-[var(--text-strong)]">
@@ -1352,7 +1395,10 @@ function PublicCartaPage() {
               <div className="pointer-events-none absolute bottom-0 left-0 h-32 w-full bg-gradient-to-t from-[rgba(0,0,0,0.28)] to-transparent" />
               <div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[rgba(246,236,223,0.58)]">
-                  <span className="rounded-full border border-[rgba(255,242,227,0.14)] bg-[rgba(255,248,240,0.06)] px-3 py-1.5">Carta del dia</span>
+                  <span className="rounded-full border border-[rgba(255,242,227,0.14)] bg-[rgba(255,248,240,0.06)] px-3 py-1.5">Carta digital + mesero IA</span>
+                  {cartaMode === "standalone" && (
+                    <span className="rounded-full border border-[rgba(255,190,133,0.22)] bg-[rgba(239,125,50,0.14)] px-3 py-1.5 text-[#ffc18c]">Experiencia Solo carta</span>
+                  )}
                   {payload?.menu?.name ? (
                     <span className="rounded-full border border-[rgba(255,242,227,0.14)] bg-[rgba(255,248,240,0.06)] px-3 py-1.5">{payload.menu.name}</span>
                   ) : null}
@@ -1361,7 +1407,9 @@ function PublicCartaPage() {
                   {payload?.tenant.name ?? "Carta del restaurante"}
                 </h1>
                 <p className="relative mt-5 max-w-2xl text-base leading-7 text-[rgba(246,236,223,0.72)] sm:text-lg">
-                  Seleccion curada para hoy. Revisa platos, precios y componentes antes de escribir por WhatsApp.
+                  {cartaMode === "standalone"
+                    ? "Explora cada plato y conversa con un mesero digital que conoce la carta y te ayuda a elegir."
+                    : "Explora cada plato y deja que nuestro mesero digital te recomiende antes de continuar por WhatsApp."}
                 </p>
               </div>
               <div className="relative mt-9 flex flex-wrap items-center gap-3 text-sm text-[rgba(246,236,223,0.76)]">
@@ -1396,6 +1444,13 @@ function PublicCartaPage() {
                   >
                     <span>Ver carta completa</span>
                     <ArrowDown size={16} />
+                  </a>
+                  <a
+                    className="mt-2 inline-flex h-11 w-full items-center justify-between rounded-2xl border border-[rgba(255,242,227,0.1)] px-4 text-xs font-semibold text-[rgba(246,236,223,0.68)] transition hover:bg-[rgba(255,248,240,0.1)] hover:text-white"
+                    href={`/r/${encodeURIComponent(tenantSlug)}`}
+                  >
+                    <span>Contacto, redes y cómo llegar</span>
+                    <ExternalLink size={14} />
                   </a>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -1433,25 +1488,25 @@ function PublicCartaPage() {
                 </a>
               ))}
             </nav>
-            <div className="space-y-7 sm:space-y-9">
+            <div className="space-y-5 sm:space-y-8">
             {groups.map((group) => (
               <section
-                className="scroll-mt-24 rounded-[32px] border border-[rgba(255,242,227,0.14)] bg-[rgba(10,8,6,0.54)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.30)] backdrop-blur-xl sm:p-5"
+                className="scroll-mt-24 rounded-[24px] border border-[rgba(255,242,227,0.14)] bg-[rgba(10,8,6,0.54)] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.30)] backdrop-blur-xl sm:rounded-[32px] sm:p-5"
                 id={`category-${group.id}`}
                 key={group.id}
               >
-                <div className="mb-4 flex items-end justify-between gap-4">
+                <div className="mb-3 flex items-end justify-between gap-3 sm:mb-4 sm:gap-4">
                   <div>
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-[rgba(246,236,223,0.56)]">Categoria</p>
-                    <h2 className="app-display mt-2 text-[2.35rem] leading-none text-[var(--text-on-dark)] sm:text-[2.8rem]">{group.label}</h2>
+                    <p className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-[rgba(246,236,223,0.56)] sm:text-[11px]">Categoria</p>
+                    <h2 className="app-display mt-1.5 text-[1.9rem] leading-none text-[var(--text-on-dark)] sm:mt-2 sm:text-[2.8rem]">{group.label}</h2>
                   </div>
-                  <span className="hidden rounded-full border border-[rgba(255,242,227,0.12)] bg-[rgba(255,248,240,0.06)] px-3 py-1.5 text-xs font-bold text-[rgba(246,236,223,0.72)] sm:inline-flex">
+                  <span className="inline-flex rounded-full border border-[rgba(255,242,227,0.12)] bg-[rgba(255,248,240,0.06)] px-2.5 py-1 text-[10px] font-bold text-[rgba(246,236,223,0.72)] sm:px-3 sm:py-1.5 sm:text-xs">
                     {group.items.length} opciones
                   </span>
                 </div>
-                <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-4 md:grid-cols-3 xl:grid-cols-4">
                   {group.items.map((item) => (
-                    <PublicCartaCard item={item} key={item.id} />
+                    <PublicCartaCard item={item} key={item.id} onOpen={() => setSelectedCartaItem(item)} />
                   ))}
                 </div>
               </section>
@@ -1460,7 +1515,26 @@ function PublicCartaPage() {
           </div>
         )}
       </main>
-      <PublicCartaConcierge restaurantName={payload?.tenant.name} tenantSlug={tenantSlug} />
+      <PublicCartaConcierge
+        menuItems={payload?.items ?? []}
+        onDismissProactiveItem={() => setProactiveCartaItem(undefined)}
+        promptRequest={conciergePrompt}
+        proactiveItem={proactiveCartaItem}
+        restaurantName={payload?.tenant.name}
+        tenantSlug={tenantSlug}
+      />
+      {selectedCartaItem && (
+        <PublicCartaProductDetail
+          fallbackEmoji={inferProductEmoji({
+            name: selectedCartaItem.displayName ?? selectedCartaItem.product?.name ?? "Producto",
+            description: selectedCartaItem.product?.description,
+          })}
+          formatPrice={formatPrice}
+          item={selectedCartaItem}
+          onAskWaiter={askConciergeAboutItem}
+          onClose={closeCartaDetail}
+        />
+      )}
     </div>
   );
 }
@@ -1474,7 +1548,7 @@ function PublicCartaState({ description, title }: { description: string; title: 
   );
 }
 
-function PublicCartaCard({ item }: { item: MenuItem }) {
+function PublicCartaCard({ item, onOpen }: { item: MenuItem; onOpen: () => void }) {
   const product = item.product;
   const name = item.displayName ?? product?.name ?? "Producto";
   const price = item.priceOverride ?? product?.basePrice ?? 0;
@@ -1486,52 +1560,47 @@ function PublicCartaCard({ item }: { item: MenuItem }) {
     .filter((option) => option.values.length > 0) ?? [];
 
   return (
-    <article className="group overflow-hidden rounded-[34px] border border-[rgba(255,242,227,0.78)] bg-[rgba(255,251,246,0.88)] shadow-[0_24px_70px_rgba(0,0,0,0.18)] backdrop-blur transition duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-[0_34px_100px_rgba(0,0,0,0.24)]">
-      <div className="relative aspect-[4/3] overflow-hidden bg-[#efe6d8]">
+    <button
+      aria-label={`Ver detalle de ${name}`}
+      className="group w-full overflow-hidden rounded-[22px] border border-[rgba(255,242,227,0.78)] bg-[rgba(255,251,246,0.9)] text-left shadow-[0_16px_44px_rgba(0,0,0,0.16)] backdrop-blur transition duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-[0_28px_80px_rgba(0,0,0,0.22)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f19051]/60 sm:rounded-[30px]"
+      onClick={onOpen}
+      type="button"
+    >
+      <div className="relative aspect-square overflow-hidden bg-[#efe6d8] sm:aspect-[4/3]">
         {product?.imageUrl ? (
           <img alt={name} className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.05]" src={product.imageUrl} />
         ) : (
           <div className="grid h-full w-full place-items-center bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.54),transparent_52%),linear-gradient(140deg,#f7efe5,#ddcbb6)]">
-            <span className="text-[5.4rem] drop-shadow-[0_20px_36px_rgba(32,26,22,0.16)]" role="img" aria-label={name}>
+            <span className="text-[3.4rem] drop-shadow-[0_16px_28px_rgba(32,26,22,0.14)] sm:text-[4.6rem] lg:text-[5rem]" role="img" aria-label={name}>
               {product?.emoji || inferProductEmoji({ name, description: product?.description })}
             </span>
           </div>
         )}
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[rgba(21,17,14,0.72)] via-[rgba(21,17,14,0.18)] to-transparent p-5">
-          <span className="inline-flex rounded-full bg-[rgba(255,250,244,0.16)] px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white/90 backdrop-blur">
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[rgba(21,17,14,0.72)] via-[rgba(21,17,14,0.18)] to-transparent p-2.5 sm:p-4">
+          <span className="inline-flex max-w-full truncate rounded-full bg-[rgba(255,250,244,0.16)] px-2 py-1 text-[8px] font-extrabold uppercase tracking-[0.1em] text-white/90 backdrop-blur sm:px-3 sm:text-[10px] sm:tracking-[0.14em]">
             {normalizeCategoryLabel(product?.category, "Carta")}
           </span>
         </div>
       </div>
-      <div className="p-5 sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <h3 className="text-xl font-extrabold leading-tight tracking-[-0.03em] text-[var(--text-strong)]">{name}</h3>
-          <p className="shrink-0 rounded-2xl bg-[#201a16] px-3 py-2 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(32,26,22,0.18)]">{formatPrice(price)}</p>
+      <div className="p-3 sm:p-4 lg:p-5">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:justify-between sm:gap-3">
+          <h3 className="line-clamp-2 text-sm font-extrabold leading-[1.2] tracking-[-0.02em] text-[var(--text-strong)] sm:text-base lg:text-lg">{name}</h3>
+          <p className="shrink-0 rounded-xl bg-[#201a16] px-2.5 py-1.5 text-[10px] font-extrabold text-white shadow-[0_10px_24px_rgba(32,26,22,0.16)] sm:rounded-2xl sm:px-3 sm:py-2 sm:text-xs">{formatPrice(price)}</p>
         </div>
         {product?.description && (
-          <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-soft)]">{product.description}</p>
+          <p className="mt-3 hidden line-clamp-2 text-xs leading-5 text-[var(--text-soft)] md:block lg:text-sm lg:leading-6">{product.description}</p>
         )}
         {product?.productType === "composite" && activeOptions.length > 0 && (
-          <div className="mt-5 rounded-[24px] border border-[rgba(118,93,71,0.08)] bg-[#f2eadf] p-4">
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-[var(--text-faint)]">Componentes disponibles</p>
-            <div className="mt-3 space-y-3">
-              {activeOptions.map((option) => (
-                <div key={option.id ?? option.name}>
-                  <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--text-strong)]">{option.name}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {option.values.map((value) => (
-                      <span className="rounded-full bg-white/82 px-3 py-1.5 text-xs font-semibold text-[var(--text-soft)] shadow-sm ring-1 ring-[rgba(118,93,71,0.06)]" key={value.id ?? value.name}>
-                        {value.name}{value.priceDelta > 0 ? ` +${formatPrice(value.priceDelta)}` : ""}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <span className="mt-3 inline-flex rounded-full bg-[#efe4d8] px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.08em] text-[#8a674f] sm:text-[10px]">
+            Personalizable · {activeOptions.length} elecciones
+          </span>
         )}
+        <div className="mt-3 flex items-center justify-between border-t border-[#e8ded2] pt-3 text-[10px] font-extrabold text-[#9b5a35] sm:mt-4 sm:pt-3.5 sm:text-xs">
+          <span>Ver detalle</span>
+          <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#251a15] text-white transition group-hover:rotate-90 group-hover:bg-[#e76f28] sm:h-9 sm:w-9 sm:rounded-xl"><Plus size={14} /></span>
+        </div>
       </div>
-    </article>
+    </button>
   );
 }
 
@@ -3978,6 +4047,7 @@ function NoTenantScreen({ locale, onLogout }: { locale: "en" | "es"; onLogout: (
 type AdminRestaurantCreateForm = {
   name: string;
   slug: string;
+  experienceMode: "connected" | "standalone";
   ownerEmail: string;
   ownerName: string;
   ownerPassword: string;
@@ -4014,6 +4084,7 @@ type AdminSection = "overview" | "settings" | "users" | "analytics";
 const emptyAdminRestaurantCreateForm: AdminRestaurantCreateForm = {
   name: "",
   slug: "",
+  experienceMode: "connected",
   ownerEmail: "",
   ownerName: "",
   ownerPassword: "",
@@ -4187,6 +4258,7 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
       const payload = await createAdminRestaurant({
         name: createForm.name.trim(),
         slug: createForm.slug.trim() || undefined,
+        automationEnabled: createForm.experienceMode === "connected",
         ownerEmail: createForm.ownerEmail.trim() || undefined,
         ownerName: createForm.ownerName.trim() || undefined,
         ownerPassword: createForm.ownerPassword || undefined,
@@ -4507,7 +4579,7 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-center text-[11px] font-bold text-[var(--text-soft)] sm:grid-cols-3">
                     <span className="rounded-xl bg-[var(--surface-base)] px-2 py-2">{restaurant.members.length} {locale === "en" ? "users" : "usuarios"}</span>
                     <span className="rounded-xl bg-[var(--surface-base)] px-2 py-2">{restaurant.metrics.ordersTodayCount} {locale === "en" ? "orders" : "pedidos"}</span>
-                    <span className="rounded-xl bg-[var(--surface-base)] px-2 py-2">{restaurant.automationEnabled ? (locale === "en" ? "Auto ON" : "Auto ON") : (locale === "en" ? "Auto OFF" : "Auto OFF")}</span>
+                    <span className="rounded-xl bg-[var(--surface-base)] px-2 py-2">{restaurant.automationEnabled ? (locale === "en" ? "Full platform" : "Plataforma completa") : (locale === "en" ? "Menu only" : "Solo carta")}</span>
                   </div>
                 </button>
               ))}
@@ -4534,6 +4606,14 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
                   placeholder="arepas-del-parque"
                   value={createForm.slug}
                 />
+                <AdminSelect
+                  label={locale === "en" ? "Product mode" : "Modalidad del producto"}
+                  onChange={(value) => setCreateForm((current) => ({ ...current, experienceMode: value as AdminRestaurantCreateForm["experienceMode"] }))}
+                  value={createForm.experienceMode}
+                >
+                  <option value="connected">{locale === "en" ? "Full platform + WhatsApp automation" : "Plataforma completa + automatización WhatsApp"}</option>
+                  <option value="standalone">{locale === "en" ? "Digital menu + AI waiter only" : "Solo carta digital + mesero IA"}</option>
+                </AdminSelect>
                 <AdminTextInput
                   label={locale === "en" ? "Owner email" : "Correo encargado"}
                   onChange={(value) => setCreateForm((current) => ({ ...current, ownerEmail: value }))}
@@ -4617,7 +4697,7 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
                           {selectedRestaurant.slug}
                         </span>
                         <span className="rounded-full bg-[var(--surface-base)] px-3 py-1.5 text-xs font-semibold text-[var(--text-soft)]">
-                          {selectedRestaurant.automationEnabled ? (locale === "en" ? "Automation ON" : "Automatizacion ON") : (locale === "en" ? "Automation OFF" : "Automatizacion OFF")}
+                          {selectedRestaurant.automationEnabled ? (locale === "en" ? "Full platform" : "Plataforma completa") : (locale === "en" ? "Digital menu only" : "Solo carta digital")}
                         </span>
                       </div>
                       <h2 className="mt-3 truncate text-3xl font-extrabold text-[var(--text-strong)]">{selectedRestaurant.name}</h2>
@@ -4716,6 +4796,7 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
                         <AdminInfoLine label="Tenant ID" value={selectedRestaurant.id} />
                         <AdminInfoLine label="Schema" value={selectedRestaurant.schemaName} />
                         <AdminInfoLine label={locale === "en" ? "Menu" : "Carta"} value={selectedRestaurant.cartaUrlPath} />
+                        <AdminInfoLine label={locale === "en" ? "Public page" : "Pagina publica"} value={selectedRestaurant.publicProfileUrlPath} />
                         <AdminInfoLine label={locale === "en" ? "Last order" : "Ultimo pedido"} value={formatDateTime(selectedRestaurant.metrics.lastOrderAt)} />
                         <AdminInfoLine label={locale === "en" ? "Created" : "Creado"} value={formatDateTime(selectedRestaurant.createdAt)} />
                         <AdminInfoLine label={locale === "en" ? "Updated" : "Actualizado"} value={formatDateTime(selectedRestaurant.updatedAt)} />
@@ -4769,8 +4850,14 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
                       <div className="mt-5 grid gap-3 rounded-[20px] border border-[rgba(118,93,71,0.1)] bg-[var(--surface-base)] p-4 sm:grid-cols-2 xl:grid-cols-3">
                         <AdminToggle
                           checked={editForm.automationEnabled}
-                          label={locale === "en" ? "Tenant automation" : "Automatizacion tenant"}
-                          onChange={(checked) => setEditForm((current) => current ? { ...current, automationEnabled: checked } : current)}
+                          label={editForm.automationEnabled
+                            ? (locale === "en" ? "Full platform" : "Plataforma completa")
+                            : (locale === "en" ? "Digital menu only" : "Solo carta digital")}
+                          onChange={(checked) => setEditForm((current) => current ? {
+                            ...current,
+                            automationEnabled: checked,
+                            locationAutomationEnabled: checked,
+                          } : current)}
                         />
                         <AdminToggle
                           checked={editForm.pickupEnabled}

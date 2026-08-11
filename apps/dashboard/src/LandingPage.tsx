@@ -15,8 +15,10 @@ import {
   QrCode,
   ScanSearch,
   Search,
+  Send,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Store,
   UploadCloud,
   UserRound,
@@ -89,7 +91,14 @@ function getLandingCopy(locale: LandingLocale) {
       access: "Log in",
       actionScheduleDemo: "Book a demo",
       brandTagline: "WhatsApp ordering for restaurants",
-      chips: ["Upload menu from file or photo", "Clear order states", "Connected QR menu"],
+      chips: ["Upload menu from file or photo", "Clear order states", "Digital menu with AI waiter"],
+      cartaProduct: {
+        badge: "Also available on its own",
+        body: "Give every visitor a digital menu that explains dishes, answers questions, and recommends real products from today's menu. You can start with the menu only and add WhatsApp automation later.",
+        cta: "Explore with an expert waiter",
+        points: ["Every dish opens into a clear detail", "Visual, contextual recommendations", "Share by QR, link, or social media"],
+        title: "A digital menu that knows how to sell, even without WhatsApp automation.",
+      },
       featureBadge: "Product",
       featureCards: [
         {
@@ -121,10 +130,10 @@ function getLandingCopy(locale: LandingLocale) {
           visual: "payment",
         },
         {
-          title: "QR digital menu",
-          copy: "Publish a scannable menu for tables, delivery, and Instagram, always synced with your panel.",
+          title: "Digital menu with AI waiter",
+          copy: "Publish a menu that explains dishes and makes timely recommendations, with or without WhatsApp automation.",
           icon: QrCode,
-          points: ["Public menu", "QR ready to share", "Connected to availability"],
+          points: ["Standalone product", "QR ready to share", "Synced with availability"],
           visual: "qr",
         },
         {
@@ -147,7 +156,7 @@ function getLandingCopy(locale: LandingLocale) {
         [faqs[3] as string, "You can hide it or mark it unavailable so it stops being offered immediately."],
         [faqs[4] as string, "Yes. The order can remain payment pending until your team confirms it manually."],
         [faqs[5] as string, "The integration is prepared to run with the WhatsApp channel setup the restaurant chooses."],
-        [faqs[6] as string, "Yes. Each restaurant can publish a digital menu and share it by QR or direct link."],
+        [faqs[6] as string, "Yes. The digital menu with its expert AI waiter can be used as a standalone product, even if you do not automate WhatsApp yet."],
         [faqs[7] as string, "It depends on your menu and channel, but the goal is to get menu and flow live without a long setup cycle."],
         [faqs[8] as string, "Yes. Your team can intervene, edit, or confirm whenever the situation requires it."],
         [faqs[9] as string, "Yes. It is designed for teams that want more sales without adding more operational mess."],
@@ -198,6 +207,7 @@ function getLandingCopy(locale: LandingLocale) {
       },
       navItems: [
         { href: "#como-funciona", label: "How it works" },
+        { href: "#carta-ia", label: "AI menu" },
         { href: "#producto", label: "Platform" },
         { href: "#funciones", label: "Features" },
         { href: "#faq", label: "FAQ" },
@@ -298,7 +308,14 @@ function getLandingCopy(locale: LandingLocale) {
     access: "Ingresar",
     actionScheduleDemo: "Agendar una prueba",
     brandTagline: "Pedidos por WhatsApp para restaurantes",
-    chips: ["Carga menu por archivo o foto", "Estados claros", "Carta QR conectada"],
+    chips: ["Carga menu por archivo o foto", "Estados claros", "Carta con mesero IA"],
+    cartaProduct: {
+      badge: "También disponible por separado",
+      body: "Dale a cada visitante una carta digital que explica los platos, responde preguntas y recomienda productos reales del menú del día. Puedes empezar solo con la carta y sumar la automatización de WhatsApp después.",
+      cta: "Explorar con un mesero experto",
+      points: ["Cada plato abre un detalle claro", "Recomendaciones visuales y contextuales", "Comparte por QR, enlace o redes"],
+      title: "Una carta digital que sabe vender, incluso sin automatizar WhatsApp.",
+    },
     featureBadge: "Producto",
     featureCards: [
       {
@@ -330,10 +347,10 @@ function getLandingCopy(locale: LandingLocale) {
         visual: "payment",
       },
       {
-        title: "Carta digital con QR",
-        copy: "Publica un menu escaneable para mesas, domicilios e Instagram, siempre conectado al panel.",
+        title: "Carta digital con mesero IA",
+        copy: "Publica una carta que explica los platos y recomienda en el momento justo, con o sin automatización de WhatsApp.",
         icon: QrCode,
-        points: ["Menu publico", "QR listo para compartir", "Conectado a disponibilidad"],
+        points: ["Producto independiente", "QR listo para compartir", "Conectado a disponibilidad"],
         visual: "qr",
       },
       {
@@ -356,7 +373,7 @@ function getLandingCopy(locale: LandingLocale) {
       [faqs[3] as string, "Puedes ocultarlo o marcarlo no disponible para que deje de ofrecerse de inmediato."],
       [faqs[4] as string, "Si. El pedido puede quedar pendiente de pago y esperar confirmacion manual antes de prepararse."],
       [faqs[5] as string, "La integracion se prepara para operar con la configuracion del canal que defina el restaurante."],
-      [faqs[6] as string, "Si. Cada restaurante puede publicar una carta digital y compartirla por QR o enlace."],
+      [faqs[6] as string, "Sí. La carta digital con su mesero experto IA se puede contratar como producto independiente, aunque todavía no automatices WhatsApp."],
       [faqs[7] as string, "Depende del menu y del canal, pero la idea es dejar operativa la carta y el flujo sin procesos largos."],
       [faqs[8] as string, "Si. El equipo puede intervenir, editar o confirmar cuando la situacion lo requiera."],
       [faqs[9] as string, "Si. Esta pensado para equipos que quieren vender mas sin sumar complejidad al dia a dia."],
@@ -407,6 +424,7 @@ function getLandingCopy(locale: LandingLocale) {
     },
     navItems: [
       { href: "#como-funciona", label: "Como funciona" },
+      { href: "#carta-ia", label: "Carta IA" },
       { href: "#producto", label: "Plataforma" },
       { href: "#funciones", label: "Funciones" },
       { href: "#faq", label: "Preguntas" },
@@ -592,13 +610,13 @@ export function LandingPage() {
 
   useMarketingMetadata({
     description: locale === "en"
-      ? "ParaHoy helps restaurants turn WhatsApp conversations into clear, reviewable orders for payments, kitchen, and delivery."
-      : "ParaHoy ayuda a restaurantes a convertir conversaciones de WhatsApp en pedidos claros para pagos, cocina y entrega.",
+      ? "ParaHoy gives restaurants a digital menu with an expert AI waiter and can turn WhatsApp conversations into clear, reviewable orders."
+      : "ParaHoy ofrece una carta digital con mesero experto IA y convierte conversaciones de WhatsApp en pedidos claros para el restaurante.",
     locale,
     pathname: "/",
     title: locale === "en"
-      ? "ParaHoy | WhatsApp ordering for restaurants"
-      : "ParaHoy | Pedidos por WhatsApp para restaurantes",
+      ? "ParaHoy | Digital menu with AI waiter and WhatsApp ordering"
+      : "ParaHoy | Carta digital con mesero IA y pedidos por WhatsApp",
   });
 
   useEffect(() => {
@@ -639,6 +657,7 @@ export function LandingPage() {
       <main>
         <HeroSection copy={copy} heroOffset={heroOffset} heroStatusIndex={heroStatusIndex} salesWhatsappUrl={salesWhatsappUrl} />
         <FlowSection copy={copy} />
+        <CartaAiProductSection copy={copy} />
         <ProductSection copy={copy} />
         <FeatureSection copy={copy} />
         <FAQAccordion copy={copy} />
@@ -974,6 +993,94 @@ function FlowSection({ copy }: { copy: LandingCopy }) {
                 </article>
               );
             })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CartaAiProductSection({ copy }: { copy: LandingCopy }) {
+  const { ref, visible } = useReveal<HTMLElement>();
+  const isEnglish = copy.access === "Log in";
+
+  return (
+    <section className="px-4 py-16 sm:px-6 sm:py-20" id="carta-ia" ref={ref}>
+      <div className={cn(
+        "landing-reveal mx-auto grid max-w-7xl gap-7 overflow-hidden rounded-[34px] border border-[rgba(255,255,255,0.09)] bg-[linear-gradient(140deg,#101915_0%,#17241d_48%,#442b1c_100%)] p-6 text-white shadow-[0_34px_90px_rgba(17,31,24,0.18)] sm:p-8 lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] lg:items-center lg:p-10",
+        visible && "is-visible",
+      )}>
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#bce9cd]">
+            <Sparkles size={14} />
+            {copy.cartaProduct.badge}
+          </span>
+          <h2 className="mt-6 max-w-xl text-[2.35rem] font-extrabold leading-[1.02] tracking-[-0.055em] sm:text-[3.2rem]">
+            {copy.cartaProduct.title}
+          </h2>
+          <p className="mt-5 max-w-xl text-[15px] leading-8 text-white/68">{copy.cartaProduct.body}</p>
+          <div className="mt-6 space-y-3">
+            {copy.cartaProduct.points.map((point) => (
+              <div className="flex items-center gap-3 text-sm font-semibold text-white/82" key={point}>
+                <CheckCircle2 className="shrink-0 text-[#6fe2a0]" size={18} />
+                {point}
+              </div>
+            ))}
+          </div>
+          <a className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-[#ff7a1a] px-5 py-3.5 text-sm font-extrabold text-white shadow-[0_18px_34px_rgba(255,122,26,0.24)] transition hover:-translate-y-0.5 hover:brightness-110" href="#funciones">
+            {copy.cartaProduct.cta}
+            <ArrowRight size={16} />
+          </a>
+        </div>
+
+        <div className="relative min-h-[500px]">
+          <div className="absolute inset-0 rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_70%_10%,rgba(255,155,85,0.18),transparent_28%),rgba(8,10,8,0.42)] p-4 shadow-[0_30px_70px_rgba(0,0,0,0.24)] backdrop-blur sm:p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/42">{isEnglish ? "Today’s menu" : "Carta de hoy"}</p>
+                <p className="mt-1 text-lg font-extrabold">{isEnglish ? "House favorites" : "Favoritos de la casa"}</p>
+              </div>
+              <span className="rounded-full bg-white/8 px-3 py-2 text-xs font-bold text-white/64">QR + link</span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                { emoji: "🍔", name: isEnglish ? "House burger" : "Hamburguesa de la casa", price: "$35.000" },
+                { emoji: "🥩", name: isEnglish ? "Sharing grill" : "Picada para compartir", price: "$58.000" },
+              ].map((item) => (
+                <article className="overflow-hidden rounded-[24px] bg-[#f7efe6] text-[#221814]" key={item.name}>
+                  <div className="grid h-32 place-items-center bg-[radial-gradient(circle,white,transparent_58%),#eadbc9] text-6xl">{item.emoji}</div>
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-extrabold">{item.name}</p>
+                      <span className="rounded-xl bg-[#241a15] px-2.5 py-1.5 text-xs font-bold text-white">{item.price}</span>
+                    </div>
+                    <button className="mt-4 flex w-full items-center justify-between border-t border-[#ded1c4] pt-3 text-xs font-extrabold text-[#a4582c]" type="button">
+                      {isEnglish ? "View details" : "Ver detalle"}
+                      <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#ef7d32] text-white">+</span>
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="absolute bottom-5 right-3 w-[min(90%,350px)] rounded-[25px] border border-white/12 bg-[rgba(24,17,13,0.97)] p-4 shadow-[0_28px_70px_rgba(0,0,0,0.46)] sm:right-5">
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#ef7d32]"><ChefHat size={19} /></span>
+              <div>
+                <p className="text-sm font-extrabold">{isEnglish ? "Your expert AI waiter" : "Tu mesero experto IA"}</p>
+                <p className="text-xs text-white/46">{isEnglish ? "Knows today’s real menu" : "Conoce la carta real de hoy"}</p>
+              </div>
+            </div>
+            <p className="mt-3 rounded-[17px] rounded-bl-md bg-white/[0.07] p-3 text-sm leading-6 text-white/82">
+              {isEnglish
+                ? "That sharing grill is great for 3 or 4 people. If you like a little heat, ask for the house spicy sauce."
+                : "Esa picada va muy bien para 3 o 4 personas. Si les gusta un toque de fuego, pregunten por la salsa picante de la casa."}
+            </p>
+            <div className="mt-3 flex items-center justify-between rounded-[16px] border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs text-white/38">
+              {isEnglish ? "Ask about a dish…" : "Pregunta por un plato…"}
+              <Send size={14} />
+            </div>
           </div>
         </div>
       </div>
