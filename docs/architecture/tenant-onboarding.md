@@ -1,90 +1,37 @@
-# Onboarding de nuevos clientes
+# Onboarding de restaurantes
 
-## Por que existen `control` y los schemas tenant
+## Alcance actual
 
-### `control`
+El onboarding es acompañado. La consola administrativa crea restaurante, sede inicial y miembros, pero el equipo debe verificar infraestructura y configuración externa antes de declarar activo un tenant.
 
-Es el plano global del sistema.
+## Secuencia
 
-Guarda informacion transversal:
+1. Definir módulos contratados; hasta que existan entitlements separados, registrar esta decisión fuera de `automation_enabled` y no prometer enforcement técnico.
+2. Crear el tenant desde la consola admin, que invoca el provisionamiento server-side.
+3. Confirmar registro en `control`, schema `tenant_<slug>`, sede y defaults.
+4. Verificar que el schema provenga de `tenant_template` y tenga las extensiones tenant-locales vigentes.
+5. Configurar explícitamente exposición Data API, grants mínimos, RLS y Realtime. No asumir exposición automática de tablas nuevas.
+6. Crear usuario/membresía y probar autorización real de `encargado` o `trabajador`.
+7. Configurar catálogo, carta, cobertura, pagos y Presencia Digital según el paquete.
+8. Para ParaHoy Pedidos, registrar canal Meta y confirmar que `phone_number_id` resuelva al tenant correcto.
+9. Ejecutar [Smoke tests](../runbooks/smoke-tests.md) y fechar la evidencia externa.
 
-- restaurantes/tenants,
-- que schema usa cada tenant,
-- que canal de WhatsApp pertenece a cada tenant,
-- usuarios del dashboard asociados a cada tenant,
-- webhooks raw antes de saber completamente como procesarlos.
+## Separación de conceptos
 
-### `tenant_<slug>`
+- **Entitlement:** módulo comprado; modelo técnico pendiente.
+- **Estado del tenant:** activo, inactivo o suspendido.
+- **Automatización operativa:** `automation_enabled` a nivel tenant/sede.
+- **Pausa conversacional:** control temporal de una conversación individual.
 
-Es el plano operativo de un restaurante concreto.
+Ninguno de los tres últimos sustituye al entitlement.
 
-Guarda datos propios de ese restaurante:
+## Seguridad
 
-- productos,
-- opciones,
-- menus,
-- clientes,
-- conversaciones,
-- mensajes,
-- drafts,
-- ordenes,
-- alertas,
-- eventos.
+- `SUPABASE_SERVICE_ROLE_KEY` solo se usa en API y scripts confiables.
+- Cada tabla expuesta necesita grants mínimos y RLS con autorización real.
+- Las funciones privilegiadas se revocan de `PUBLIC` y se conceden solo al rol requerido.
+- Los dominios, URLs, IDs de Meta y estado de deploy se documentan con placeholders; los valores reales viven en gestores de secretos o consolas externas.
 
-## Flujo al recibir un mensaje
+## Criterio de finalización
 
-1. Meta envia webhook con `phone_number_id`.
-2. El backend consulta `control.tenant_channels`.
-3. Encuentra el tenant asociado.
-4. Lee `control.tenants.schema_name`.
-5. Usa ese schema para operar datos del restaurante.
-
-## Como se crea un nuevo cliente hoy
-
-El onboarding ya no es solo manual por SQL.
-
-Hoy existe una consola admin y una RPC de provisionamiento que permiten:
-
-1. crear fila en `control.tenants`,
-2. crear schema dedicado `tenant_<slug>`,
-3. clonar tablas base del tenant desde `tenant_template`,
-4. crear sede principal,
-5. crear menu inicial,
-6. crear o asociar usuarios,
-7. configurar estado y automatizacion inicial.
-
-Punto clave:
-
-- `tenant_template` debe ser el template de provisionamiento.
-- `tenant_demo` puede vivir como tenant de pruebas funcionales sin contaminar el template.
-- los tenants reales creados para clientes no deberian convertirse en la referencia de schema canonica.
-
-Documentacion relacionada:
-
-- [Admin: gestion de restaurantes y miembros](../planning/admin-restaurant-management.md)
-- [Arquitectura de migraciones de base de datos](./database-migrations.md)
-
-## Limite actual importante
-
-El alta del tenant ya crea el schema fisico y permite operarlo desde la consola admin.
-
-Sin embargo, varias pantallas operativas del dashboard del restaurante siguen dependiendo de que el schema este expuesto en Data API. Por eso:
-
-- el provisionamiento administrativo ya funciona,
-- pero un tenant nuevo puede requerir pasos adicionales de exposicion o evolucion de endpoints para usar todas las pantallas operativas existentes.
-
-## Checklist recomendado para demos
-
-- tenant creado,
-- sede activa,
-- menu publicado,
-- usuarios creados,
-- canal WhatsApp asociado,
-- automatizacion activada cuando corresponda,
-- schema expuesto si la pantalla operativa lo requiere.
-
-## Recomendacion operativa
-
-- evitar usar `tenant_template` como tenant operativo o de pruebas del dia a dia.
-- `tenant_demo` puede seguir como sandbox activo mientras el template quede separado.
-- si en el futuro el sandbox crece demasiado, preferir provisionar otro tenant descartable para pruebas funcionales.
+Un tenant está listo cuando los módulos contratados pasan sus smoke tests, el acceso de un usuario real está autorizado, los canales apuntan al tenant correcto y las verificaciones externas tienen fecha. La mera creación del schema no completa el onboarding.

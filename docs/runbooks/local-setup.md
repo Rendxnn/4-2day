@@ -1,166 +1,72 @@
 # Setup local
 
-## Estado actual
+## Requisitos
 
-El repo ya tiene:
+- Node.js 22 o superior.
+- pnpm 9.15.0.
+- Acceso a un proyecto de Supabase de desarrollo.
+- Credenciales de Meta y proveedores externos solo para probar esas integraciones.
 
-- API sobre Cloudflare Workers,
-- dashboard operativo,
-- persistencia conversacional,
-- flujo guiado,
-- routing semantico temporal para texto del cliente, con backend deterministico para validacion de negocio,
-- modulo de pedidos y agotados.
-
-## Requisitos recomendados
-
-- Node.js 20 o superior.
-- pnpm.
-- Python 3 para `scripts/dev_services.py`.
-- Cuenta Supabase.
-- Cuenta Meta Developers.
-- Cuenta Cloudflare.
-
-## Nota para Mac
-
-En Mac suele ser mas simple instalar `pnpm` globalmente y usarlo directo:
-
-```bash
-npm install -g pnpm@9.15.0
-pnpm --version
-```
-
-`corepack pnpm ...` tambien funciona si Corepack ya esta configurado en tu maquina.
-
-Si `pnpm` no esta disponible pero Node trae Corepack:
-
-```bash
-corepack pnpm --version
-corepack pnpm install
-```
-
-## Instalacion inicial
+Instala dependencias desde la raíz:
 
 ```bash
 pnpm install
 ```
 
-Alternativa si no existe el shim directo de pnpm:
+Si pnpm no está disponible, instala la versión declarada en `package.json` o usa los helpers de `scripts/bash`, que intentan pnpm, Corepack y luego `npm exec`.
+
+## Variables
 
 ```bash
-corepack pnpm install
-```
-
-## Variables de entorno
-
-El repo tiene tres capas de configuracion local:
-
-- `.env` en la raiz como referencia general del proyecto,
-- `apps/api/.dev.vars` para `wrangler dev`,
-- `apps/dashboard/.env` o `apps/dashboard/.env.local` para Vite.
-
-Copiar:
-
-```bash
-cp .env.example .env
 cp apps/api/.dev.vars.example apps/api/.dev.vars
-cp apps/dashboard/.env.example apps/dashboard/.env
+cp apps/dashboard/.env.example apps/dashboard/.env.local
 ```
 
-Completar al menos estas variables en `apps/api/.dev.vars`:
+Completa valores locales sin versionarlos. Los grupos principales son:
 
-```txt
-SUPABASE_URL
-SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-```
+- API/entorno: `APP_ENV`, `APP_BASE_URL`, `DASHBOARD_ALLOWED_ORIGINS`.
+- Meta: `META_VERIFY_TOKEN`, `META_ACCESS_TOKEN`, `META_PHONE_NUMBER_ID`, `META_WABA_ID`, `META_GRAPH_API_VERSION`.
+- Supabase: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` y, si el flujo lo necesita, `DATABASE_URL`.
+- IA/audio: Gemini, OpenRouter, OpenAI o Hugging Face según configuración.
+- Geocoding: clave server-side para API y clave restringida por referrer para dashboard.
 
-Completar al menos estas variables en `apps/dashboard/.env`:
-
-```txt
-VITE_API_BASE_URL
-VITE_SUPABASE_URL
-VITE_SUPABASE_ANON_KEY
-```
-
-Variables del proyecto raiz (`.env`):
-
-```txt
-META_VERIFY_TOKEN
-META_ACCESS_TOKEN
-META_PHONE_NUMBER_ID
-META_WABA_ID
-SUPABASE_URL
-SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-DATABASE_URL
-GEMINI_API_KEY
-GEMINI_MODEL
-AI_CONFIG_ENCRYPTION_KEY
-OPENAI_API_KEY
-```
-
-`OPENAI_API_KEY` hoy es opcional y legado. El proveedor activo del flujo actual es Gemini.
+Nunca pongas `SUPABASE_SERVICE_ROLE_KEY` ni claves de IA en variables `VITE_*`.
 
 ## Supabase
 
-Pasos:
+1. Confirma CLI con `supabase --version` y consulta `supabase --help`.
+2. Enlaza únicamente el proyecto de desarrollo apropiado.
+3. Aplica el historial de `supabase/migrations` con el workflow vigente del equipo.
+4. Provisiona o valida un tenant de prueba desde `tenant_template`.
+5. Confirma schemas expuestos, grants, RLS, Realtime y buckets necesarios.
 
-1. Crear proyecto en Supabase.
-2. Guardar URL y keys.
-3. Crear schema `control`.
-4. Crear schema `tenant_demo`.
-5. Correr migraciones cuando existan.
-6. Crear usuario demo.
-7. Crear tenant demo.
-8. Asociar usuario demo con tenant.
+No ejecutes `packages/db/migrations` ni seeds históricos como procedimiento de setup.
 
-## Meta Developers
+## Ejecutar
 
-Pasos:
-
-1. Crear app.
-2. Agregar producto WhatsApp.
-3. Copiar phone number ID y WABA ID.
-4. Configurar token.
-5. Agregar telefono personal como receptor de prueba.
-6. Configurar webhook con URL publica.
-
-## URL publica para webhook
-
-Opciones:
-
-- desplegar a Cloudflare Workers staging,
-- usar Cloudflare Tunnel,
-- usar ngrok.
-
-Recomendacion: usar staging en Cloudflare Workers para pruebas reales de Meta.
-
-## Primer smoke test
-
-Con la implementacion actual:
-
-1. `GET /health` responde ok.
-2. Meta verifica `GET /webhooks/whatsapp`.
-3. Enviar mensaje desde telefono de prueba.
-4. Confirmar que aparece en `webhook_events`.
-5. Confirmar que aparece en `messages`.
-6. Confirmar que se resolvio tenant demo.
-7. Confirmar que se envio saludo con menu real.
-
-## Levantar servicios rapido
-
-Desde la raiz:
+En terminales separadas:
 
 ```bash
-python scripts/dev_services.py --start
+pnpm --filter @42day/api dev
+pnpm --filter @42day/dashboard dev
 ```
 
-Ver estado:
+O usa:
 
 ```bash
-python scripts/dev_services.py --status
+bash scripts/bash/start-local-stack.sh
 ```
 
-## Guia completa
+- API: `http://127.0.0.1:8787`
+- Dashboard: `http://localhost:5173`
 
-Ver [external-configuration-step-by-step.md](./external-configuration-step-by-step.md).
+## Verificar
+
+```bash
+curl -fsS http://127.0.0.1:8787/health
+pnpm typecheck
+pnpm test
+pnpm --filter @42day/dashboard build
+```
+
+Después ejecuta [Smoke tests](./smoke-tests.md). La configuración remota está en [Despliegue](./deployment.md).

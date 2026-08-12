@@ -1,194 +1,134 @@
-# PROJECT_CONTEXT
+# Contexto del proyecto ParaHoy
 
-## Proyecto
+> Fuente canónica de propósito, alcance y decisiones de producto. El estado verificable y las brechas viven en [Estado actual](./docs/current-status.md).
 
-Sistema multi-tenant de automatizacion de pedidos por WhatsApp para restaurantes pequenos y medianos.
+## Propósito
 
-## Producto
+ParaHoy ayuda a restaurantes pequeños y medianos a vender y atender clientes mediante dos módulos que pueden contratarse juntos o por separado. La venta y el onboarding son acompañados: todavía no es un producto autoservicio ni diseñado para operar a gran escala sin intervención del equipo.
 
-42day recibe mensajes de clientes por WhatsApp, interpreta el pedido mediante un plan semántico acotado, construye un `draft_order`, calcula el total en backend, confirma con el cliente y deja una `order` lista para revision del restaurante desde dashboard.
+## Oferta modular
 
-## Alcance congelado para demos
+### ParaHoy Pedidos
 
-El objetivo inmediato no es produccion completa. Es una version `demo-ready` para:
+Automatización y gestión de pedidos por WhatsApp. Recibe mensajes, mantiene el estado de la conversación, construye un borrador, valida catálogo y disponibilidad, calcula valores en backend y crea una orden después de la confirmación del cliente. El restaurante revisa y opera la orden desde el dashboard.
 
-- mostrar menu real,
-- tomar pedidos guiados y pedidos naturales simples,
-- persistir conversaciones y drafts,
-- cerrar checkout basico,
-- pedir y recordar datos de facturacion del cliente durante checkout,
-- crear ordenes pendientes de confirmacion,
-- operar aceptacion, agotados y reintentos desde dashboard,
-- demostrar handoff humano.
+### ParaHoy Presencia Digital
 
-## Principios
+Presencia pública del restaurante compuesta por:
 
-- La interpretacion de toda intencion textual del cliente es semantica durante el experimento actual; no se usa deteccion deterministica de intencion para interferir esa decision.
-- Lo deterministico permanece en la capa de negocio: media/ubicacion, resolucion de catalogo y opciones, precios, cobertura, billing, disponibilidad, transiciones y persistencia.
-- El modelo no calcula precios.
-- El modelo no decide disponibilidad final.
-- El modelo recibe IDs canónicos de menú, opciones y líneas existentes, y solo devuelve operaciones tipadas permitidas para el estado actual; no crea entidades ni inventa identificadores.
-- Todo pedido primero existe como `draft_order`.
-- Siempre hay confirmacion del cliente antes de crear `order`.
-- Toda orden queda pendiente de revision del restaurante.
-- Debe existir fallback a humano.
-- El flujo guiado debe existir aunque exista parser semantico.
-- La transferencia requiere intervencion humana en MVP/demo-ready.
-- La conversacion expira a los 30 minutos sin respuesta.
+- landing responsive basada en una plantilla fija;
+- identidad básica: logo, portada, colores y contenido del restaurante;
+- presentación, horarios, ubicación, contacto, redes sociales y llamados a la acción;
+- carta pública con disponibilidad;
+- concierge IA para responder preguntas sobre la carta;
+- enlace a encuesta de servicio;
+- URL de ParaHoy o dominio propio dentro de la oferta estándar.
 
-## Decisiones cerradas
+La página avanzada o diseñada a medida es una extensión personalizada, no parte de la plantilla estándar.
 
-| Tema | Decision |
+### Paquete completo
+
+Los dos módulos comparten restaurante, catálogo, carta, disponibilidad y configuración. El estado deseado permite armar un carrito web con varios productos y transferirlo a WhatsApp para continuar el pedido.
+
+Cada módulo deberá tener un entitlement técnico independiente por tenant. El paquete contratado no debe inferirse de `automation_enabled`, del estado operativo del restaurante ni de una pausa de conversación. Esa separación aún no existe en el modelo implementado.
+
+## Estados de madurez
+
+La documentación usa estas etiquetas:
+
+- **Actual:** existe en código y tiene un camino funcional identificable.
+- **Parcial:** existe, pero no cubre todavía la experiencia o gestión completa.
+- **Experimental:** está implementado para validación interna y no pertenece a la oferta comercial.
+- **Deseado:** forma parte del producto acordado, pero requiere implementación.
+
+## Principios de ParaHoy Pedidos
+
+### Todo texto pasa por IA
+
+Todo mensaje de texto que entra al flujo conversacional de pedidos debe ser interpretado por IA. Por ahora no habrá un router determinista que resuelva saludos, intenciones, confirmaciones, números o comandos exactos antes de consultar al modelo.
+
+El contrato conceptual es:
+
+```text
+texto del cliente + estado vigente + contexto permitido
+  -> IA
+  -> acción controlada
+  -> validación y ejecución determinista en backend
+```
+
+La IA:
+
+- recibe el estado vigente, el borrador y los identificadores canónicos necesarios;
+- solo puede proponer acciones incluidas en el conjunto permitido para ese estado;
+- no calcula precios, no decide disponibilidad final, no inventa identificadores y no escribe directamente en la base de datos.
+
+El backend:
+
+- valida esquema, evidencia, permisos y transición de estado;
+- resuelve catálogo, configurables, cobertura, precios, billing y disponibilidad;
+- aplica la acción de forma consistente e idempotente;
+- conserva el estado anterior y solicita aclaración o activa el manejo de error si la acción es inválida, ambigua o incompatible.
+
+El procesamiento determinista sigue siendo obligatorio para infraestructura y seguridad: webhooks, autenticación, normalización de media y ubicación, idempotencia, persistencia, reglas de negocio y ejecución. No debe sustituir a la IA en la interpretación de texto.
+
+El código actual aún contiene rutas textuales deterministas previas al plan semántico. Esto es una [desalineación pendiente](./docs/current-status.md#desalineaciones-prioritarias), no el diseño deseado.
+
+### Invariantes del pedido
+
+- Todo pedido comienza como `draft_order`.
+- El cliente confirma antes de crear una `order`.
+- La orden requiere revisión operativa del restaurante.
+- Precios, totales y disponibilidad se determinan en backend.
+- Debe existir handoff humano y control de pausa por conversación.
+- Una conversación inactiva expira según la política implementada de 30 minutos.
+
+## Principios de ParaHoy Presencia Digital
+
+- El concierge informa y recomienda usando carta y conocimiento autorizado del restaurante; no confirma pedidos.
+- La disponibilidad pública proviene del mismo catálogo operativo.
+- El restaurante debe poder autogestionar identidad, información, enlaces, dominio, catálogo, carta, disponibilidad y conocimiento del concierge.
+- El carrito web multi-producto continúa en WhatsApp; no constituye checkout ni pago web.
+
+## Decisiones técnicas vigentes
+
+| Tema | Decisión |
 | --- | --- |
-| Monorepo | Si |
+| Monorepo | pnpm + Turborepo |
 | Lenguaje | TypeScript |
-| Backend API | Cloudflare Workers + Hono |
-| Dashboard | React + Vite dentro de `apps/dashboard` |
-| Base de datos | Supabase Postgres |
-| Tenant isolation | Schemas separados por tenant mas schema global `control` |
-| WhatsApp durante desarrollo | Numero demo de Meta Developers |
-| Sedes en demo-ready | Una sede por restaurante |
-| Fulfillment | Delivery y pickup |
-| Delivery fee | Fijo por sede |
-| Pagos | Efectivo y transferencia |
-| Transferencia | Se pide solo despues de que el restaurante acepta disponibilidad |
-| Confirmacion operativa | Siempre manual por restaurante |
-| Conversacion natural | Experimento temporal: LLM interpreta todo texto; backend valida y aplica deterministamente |
-| LLM inicial | Gemini via `packages/t-router` |
-| Timeout | 30 minutos |
-| Dashboard data access | Solo via `apps/api`, no directo a Supabase desde frontend |
-| Roles operativos | `encargado`, `trabajador` |
+| API | Cloudflare Workers + Hono |
+| Dashboard y páginas públicas | React + Vite |
+| Datos, Auth, Storage y Realtime | Supabase |
+| Aislamiento tenant | schema global `control`, plantilla `tenant_template` y un schema `tenant_<slug>` por restaurante |
+| WhatsApp | Meta WhatsApp Cloud API |
+| IA conversacional | proveedores configurables mediante `packages/t-router`; Gemini es el proveedor principal actual |
+| Fulfillment | domicilio y recoger en local |
+| Pagos | efectivo y transferencia; revisión humana del comprobante |
+| Acceso del frontend | API para negocio; Supabase directo solo para Auth y suscripciones Realtime controladas |
+| Roles operativos | `encargado` y `trabajador` |
+| Migraciones canónicas | `supabase/migrations` |
 
-## Decision de migraciones multi-tenant
+Los nombres técnicos históricos (`42day`, `@42day`, rutas, variables y workers) se conservan hasta que exista un cambio de código coordinado. No representan una segunda marca de producto.
 
-- `control` es schema global canonico.
-- `tenant_template` es el template canonico de tenant.
-- `tenant_demo` queda como tenant sandbox/demo para pruebas funcionales.
-- los demas `tenant_<slug>` son instancias operativas, no fuente canonica de schema.
-- una migracion tenant-profesional debe cubrir dos necesidades distintas:
-  - baseline canonico para desarrollo futuro: `control` + `tenant_template`
-  - rollout operativo para tenants existentes: aplicar el cambio a todos los `tenant_*` ya provisionados
-- nuevos tenants no deben nacer re-ejecutando todas las migraciones historicas; deben provisionarse clonando el template canonico vigente y luego sembrando defaults minimos.
+## Fuera del alcance actual
 
-## Estado real actual
+- POS e inventario.
+- Conciliación automática de pagos.
+- Checkout o pago web.
+- Página avanzada incluida en el paquete estándar.
+- Operación autoservicio y onboarding sin acompañamiento.
+- Garantías de operación a gran escala.
+- OCR de menús listo para producción.
+- Cobertura geoespacial avanzada y multiidioma completo.
 
-Ultima actualizacion documental: 2026-07-18.
+## Fuentes de verdad
 
-Ya implementado:
-
-- webhook de WhatsApp,
-- persistencia de customers, conversations, messages y addresses,
-- menu real desde Supabase,
-- flujo de draft -> checkout -> orden,
-- validacion fuerte de configurables contra `product_options`,
-- flujo de comprobantes de transferencia con persistencia real y revision minima,
-- perfiles de facturacion reutilizables por cliente,
-- snapshot de facturacion persistido en draft y order,
-- estados de revision del restaurante y reemplazos,
-- dashboard para pedidos, agotados y progreso operativo,
-- consola admin de restaurantes y miembros,
-- refactor estructural en progreso de `chat-routing` y del dashboard API hacia submodulos por responsabilidad,
-- routing semántico total basado en un plan de operaciones ID-based para items, configurables, fulfillment, dirección, billing y pago; el plan se valida y aplica atómicamente en el tenant,
-- decisiones semánticas restringidas por estado para reutilizar/cambiar billing, editar la confirmación y resolver el fallback de transferencia,
-- direcciones escritas geocodificadas y validadas antes de facturación/confirmación; una dirección no resoluble no avanza y ofrece corrección, ubicación WhatsApp o asesor,
-- suite API inicial para billing y compatibilidad temporal con tenants legacy en lecturas de `locations`.
-
-Todavia incompleto:
-
-- consola humana con bandeja, timeline y compositor de respuesta,
-- pruebas automatizadas conversacionales amplias,
-- verificacion automatizada de migraciones y del rollout remoto por tenant.
-
-## Modulos backend
-
-- `whatsapp_webhook`
-- `message_router`
-- `tenant_resolver`
-- `conversation_service`
-- `draft_order_service`
-- `semantic_parser`
-- `validation_engine`
-- `pricing_engine`
-- `order_service`
-- `handoff_service`
-- `dashboard_api`
-
-Nota: `guided_flow_engine`, `validation_engine` y `pricing_engine` existen como modulos nominales, pero hoy la mayor parte de la orquestacion real vive en `message_router` y `draft_order_service`.
-
-Nota de estructura actual:
-
-- `apps/api/src/features/chat-routing/` ya esta migrando hacia carpetas por responsabilidad como `checkout/`, `guided/`, `semantic/`, `transfer/`, `manual/`, `outbound/` y `shared/`.
-- `apps/api/src/features/dashboard/` ya usa router modular y se sigue partiendo hacia `routes/*` y `support/*`.
-- por compatibilidad, varios archivos flat viejos siguen existiendo como fachadas de reexport mientras termina la migracion interna.
-
-Nota operativa importante:
-
-- `tenant_template` debe mantenerse limpio y estructural, sin uso operativo diario.
-- `tenant_demo` puede seguir usandose para pruebas funcionales mientras no se convierta otra vez en template.
-
-## Fuentes de verdad documentales
-
-- Este archivo define producto, alcance y decisiones vigentes.
-- [Estado actual](./docs/planning/current-status.md) define estado funcional y operativo.
-- `docs/architecture/*` define arquitectura; [migraciones](./docs/architecture/database-migrations.md) define el workflow de schema.
-- `docs/runbooks/*` define procedimientos ejecutables. Ningun documento debe duplicar una regla contradictoria.
-
-## Estados de conversacion
-
-- `new`
-- `awaiting_mode_selection`
-- `awaiting_guided_item_selection`
-- `awaiting_product_configuration`
-- `awaiting_more_items`
-- `awaiting_fulfillment_type`
-- `awaiting_address`
-- `awaiting_billing_reuse_confirmation`
-- `awaiting_normal_billing_info`
-- `awaiting_electronic_billing_info`
-- `awaiting_payment_method`
-- `awaiting_transfer_proof`
-- `awaiting_transfer_fallback_payment_method`
-- `awaiting_confirmation`
-- `awaiting_restaurant_confirmation`
-- `awaiting_order_adjustment`
-- `manual`
-- `completed`
-- `expired`
-
-## Automatizacion por conversacion
-
-Cada conversacion abierta puede pausarse o reanudarse por un `encargado` o `trabajador` desde el detalle operativo de pedido o desde la tarjeta de conversaciones abiertas, incluso antes de crear un pedido. Pausar deja el estado en `manual`, conserva el estado de reanudacion y evita la siguiente respuesta automatica; reanudar restaura ese estado y reinicia las aclaraciones.
-
-El cambio es una unica operacion transaccional en el schema del tenant: bloquea la conversacion, valida `updated_at` para evitar escrituras obsoletas, actualiza la conversacion y registra el evento. Al reanudar resuelve solo alertas de handoff de routing (`support_requested`, parser/validacion/error tecnico/cambio de pedido); pagos por transferencia y confirmaciones operativas permanecen abiertos. La brecha humana restante es una bandeja/timeline completa, no el control basico de pausa.
-
-## Estados de draft order
-
-- `draft`
-- `needs_clarification`
-- `ready_for_confirmation`
-- `confirmed`
-- `cancelled`
-- `expired`
-
-## Estados de order
-
-- `new`
-- `pending_restaurant_confirmation`
-- `needs_customer_replacement`
-- `payment_pending_review`
-- `accepted`
-- `preparing`
-- `on_the_way`
-- `delivered`
-- `cancelled`
-
-## Non-goals por ahora
-
-- OCR robusto de menus en produccion,
-- reconciliacion automatica de pagos,
-- inventario,
-- POS,
-- cobertura geoespacial avanzada,
-- multi-idioma,
-- analitica avanzada,
-- voz/audio.
+- [Estado actual y brechas](./docs/current-status.md)
+- [Arquitectura del monorepo](./docs/architecture/monorepo.md)
+- [Arquitectura backend](./docs/architecture/backend.md)
+- [Arquitectura del frontend](./docs/architecture/dashboard-frontend.md)
+- [Migraciones multi-tenant](./docs/architecture/database-migrations.md)
+- [Flujo conversacional](./docs/flows/conversation-flow.md)
+- [Presencia Digital](./docs/flows/presence-digital.md)
+- [Setup local](./docs/runbooks/local-setup.md)
+- [Despliegue y configuración externa](./docs/runbooks/deployment.md)
+- [Smoke tests](./docs/runbooks/smoke-tests.md)

@@ -1,225 +1,59 @@
-# Arquitectura de migraciones de base de datos
+# Migraciones multi-tenant
 
-## Objetivo
+## Fuentes canónicas
 
-Dejar claro como deben evolucionar los schemas en un sistema multi-tenant por schema separado sin mezclar:
+- `supabase/migrations`: historial ejecutable y único lugar para migraciones nuevas.
+- `control`: registro global de tenants, canales, miembros y capacidades administrativas.
+- `tenant_template`: baseline estructural para tenants futuros.
+- `tenant_demo`: sandbox funcional, nunca plantilla.
+- `tenant_<slug>`: instancia operativa de cada restaurante.
 
-- schema canonico de desarrollo,
-- tenants reales ya provisionados,
-- fixes de drift o emergencias.
+`packages/db/migrations` y sus seeds son referencia histórica; no reciben cambios nuevos ni se usan para provisionar ambientes.
 
-## Modelo de schemas
+## Regla de cambio tenant
 
-### `control`
+Una capacidad nueva debe cubrir en la misma entrega:
 
-Schema global canonico.
+1. estructura futura en `tenant_template`;
+2. rollout idempotente a cada `tenant_*` existente;
+3. hooks o funciones necesarios para que el provisionamiento futuro instale tablas, RPC, políticas y publicaciones;
+4. grants mínimos y RLS de todo objeto expuesto;
+5. verificación de drift y comportamiento.
 
-Guarda:
+No se modifica `tenant_demo` como fuente y luego se copia manualmente. Los tenants nuevos se crean desde la plantilla vigente mediante `control.provision_restaurant_tenant`.
 
-- `tenants`
-- `tenant_users`
-- metadata global
-- funciones de provisionamiento y soporte administrativo
+## Data API, grants y RLS
 
-### `tenant_template`
+Desde 2026 Supabase migra hacia exposición opt-in de tablas nuevas. Crear una tabla y habilitar RLS no garantiza por sí solo acceso mediante Data API.
 
-Template canonico de tenant.
+Para todo objeto requerido por API, dashboard o Realtime se debe verificar por separado:
 
-Se usa como referencia estructural para:
+- que el schema esté incluido explícitamente en los schemas expuestos de Data API;
+- que `anon`, `authenticated` o `service_role` tengan solo los `GRANT` necesarios;
+- que RLS esté habilitado y sus policies expresen autorización real;
+- que las tablas Realtime estén en la publication correspondiente.
 
-- baseline canonico del schema tenant
-- provisionamiento de nuevos tenants
+Los grants controlan acceso al objeto; RLS controla filas después de obtener ese acceso. Nunca se expone una tabla sin ambas capas cuando el rol cliente puede alcanzarla. `SUPABASE_SERVICE_ROLE_KEY` permanece solo en backend.
 
-Importante:
+El repositorio incluye `control.refresh_postgrest_tenant_schemas()`, pero el alta de un tenant no debe darse por completa sin confirmar exposición y grants efectivos. La automatización de esa verificación es una brecha vigente.
 
-- no deberia tratarse como tenant de negocio permanente,
-- idealmente deberia mantenerse vacio o lo mas limpio posible,
-- debe mantenerse estructuralmente alineado con la intencion del producto.
+## Flujo de desarrollo
 
-### `tenant_demo`
+1. Comprobar versión y ayuda de Supabase CLI: `supabase --version` y `supabase migration --help`.
+2. Crear el archivo mediante `supabase migration new <nombre>`.
+3. Implementar baseline, rollout y provisionamiento futuro de forma idempotente.
+4. Probar en un proyecto local o efímero, no en producción como primer destino.
+5. Ejecutar advisors y revisar seguridad cuando haya funciones, vistas, RLS o Storage.
+6. Aplicar la migración completa sobre una base vacía y sobre una copia con tenants existentes.
+7. Verificar `supabase migration list --local` y el smoke test funcional.
 
-Tenant sandbox/demo.
+## Checklist
 
-Se puede usar para:
-
-- pruebas funcionales,
-- demos controladas,
-- verificaciones manuales del flujo vivo.
-
-No debe ser la referencia canonica del schema tenant.
-
-### `tenant_<slug>`
-
-Instancia operativa de un restaurante ya provisionado.
-
-No es fuente canonica de schema.
-
-Puede tener drift si una migracion no le llego correctamente o si hubo SQL manual puntual.
-
-## Conceptos clave
-
-### Baseline canonico
-
-Es la base que los developers usan para evolucionar el schema en el futuro.
-
-Debe representar:
-
-- `control`
-- `tenant_template`
-
-No debe incluir todos los tenants historicos como si cada uno fuera parte de la definicion canonica del sistema.
-
-### Rollout operativo
-
-Es la parte de una migracion que actualiza tenants ya existentes en un ambiente real.
-
-Una migracion tenant-profesional debe:
-
-1. cambiar el template tenant,
-2. recorrer tenants existentes,
-3. aplicar el cambio de forma idempotente,
-4. refrescar exposicion/API cuando corresponda.
-
-### Drift operativo
-
-Ocurre cuando un tenant real no coincide con la estructura que deberia tener.
-
-Causas comunes:
-
-- SQL manual en remoto
-- migracion parcial
-- loops que fallaron a mitad de rollout
-- tenant provisionado desde un template viejo
-- template actualizado sin actualizar tenants ya existentes
-
-### Reconciliacion de drift
-
-Proceso para alinear tenants reales con la estructura esperada.
-
-Puede incluir:
-
-- migraciones correctivas
-- SQL one-shot de reparacion
-- scripts de validacion por schema
-
-No debe confundirse con el baseline canonico.
-
-## Provisionamiento de nuevos tenants
-
-Hoy el alta de restaurantes usa `control.provision_restaurant_tenant(...)`.
-
-El flujo actual:
-
-1. crea fila en `control.tenants`
-2. crea schema `tenant_<slug>`
-3. clona tablas base desde `tenant_template`
-4. reconstruye foreign keys
-5. habilita RLS y grants
-6. crea sede principal
-7. crea menu inicial
-8. refresca PostgREST
-
-Las funciones tenant-locales no se copian automaticamente junto con las tablas. Cuando una capacidad necesita una RPC por tenant, la migracion debe crearla para `tenant_template`, hacer rollout a los tenants existentes y enganchar el provisionamiento futuro. La migracion de automatizacion de conversaciones usa un trigger diferido sobre `control.tenants`: despues de que `provision_restaurant_tenant` termina de crear el schema, instala la RPC, la policy de lectura de alertas y su tabla en `supabase_realtime` dentro de la misma transaccion de provisionamiento.
-
-Decision pragmatica:
-
-- mantener el modelo de clonacion desde template,
-- no reprovisionar un tenant nuevo re-ejecutando toda la historia de migraciones.
-
-## Como deben verse las migraciones tenant
-
-Cuando el cambio afecta tablas tenant, la migracion debe cubrir dos necesidades:
-
-### A. Futuro
-
-Actualizar `tenant_template` para que futuros tenants nazcan correctos.
-
-### B. Presente
-
-Actualizar todos los tenants existentes para que no queden atrasados.
-
-Patron recomendado:
-
-1. asegurar cambio en `tenant_template`
-2. iterar tenants desde `control.tenants`
-3. aplicar `alter table`, `create table`, `create index`, `drop/add constraint`
-4. usar `if exists` y `if not exists`
-5. emitir `notify pgrst, 'reload schema'` si cambia exposicion consumida por REST
-
-Para cambios que ya tuvieron una migracion aplicada, no se edita esa migracion: se crea una migracion forward idempotente. Es importante para poder repetir el rollout y conservar una historia reproducible de los ambientes.
-
-## Flujo recomendado de desarrollo
-
-### Carpeta canonica
-
-Las migraciones nuevas deben vivir en:
-
-- `supabase/migrations`
-
-La carpeta `packages/db/migrations` queda como referencia legacy de la etapa anterior y no recibe nuevas migraciones canonicas. Sus archivos no son instrucciones operativas para ambientes nuevos.
-
-### Baseline inicial Supabase CLI
-
-La baseline canonica debe salir de:
-
-- `control`
-- `tenant_template`
-
-No de todos los `tenant_<slug>` existentes.
-
-### Cambio nuevo de schema
-
-1. crear nueva migracion
-2. escribir SQL del cambio
-3. actualizar `control` si hace falta
-4. actualizar `tenant_template`
-5. hacer rollout a tenants existentes
-6. probar localmente
-7. aplicar por CLI a staging/prod
-8. validar que no quedo drift
-
-## Testing y ambientes
-
-### Mala practica relativa
-
-Usar `tenant_template` como tenant de pruebas del dia a dia no es ideal porque:
-
-- mezcla template con datos de sandbox,
-- puede dejar menus/clientes/conversaciones que no representan un template limpio,
-- hace mas confuso razonar sobre drift.
-
-### Practica recomendada
-
-- conservar `tenant_template` como template estructural,
-- usar `tenant_demo` como sandbox funcional actual o crear otro sandbox separado,
-- borrar y reprovisionar tenants sandbox cuando haga falta.
-
-## Seeds
-
-Estado actual:
-
-- todavia no existe un seed canonico del proyecto integrado al flujo normal de Supabase CLI,
-- `supabase/seed.sql` existe solo como placeholder tecnico minimo,
-- los datos demo/legacy siguen fuera de ese flujo y viven en `packages/db/seeds/` solo como referencia; no deben ejecutarse como provisioning actual.
-
-Decision por ahora:
-
-- no tratar ese placeholder como seed oficial del producto,
-- cuando definamos un seed real, debe hacerse como trabajo separado y documentado.
-
-## Regla de emergencia
-
-Si una correccion debe hacerse manualmente en remoto:
-
-1. aplicar el fix necesario
-2. capturarlo enseguida en migracion o baseline canonica
-3. reconciliar historial de migraciones
-4. documentar por que fue necesario
-
-## Checklist para cambios tenant
-
-- el cambio existe en `tenant_template`
-- el cambio llega a tenants existentes
-- el provisioning sigue clonando estructura correcta
-- `control.provision_restaurant_tenant` sigue vigente si el cambio afecta onboarding
-- se valido que no hay drift obvio en tenants activos
+- [ ] `tenant_template` representa el estado futuro.
+- [ ] Todos los tenants existentes recibieron el rollout.
+- [ ] El provisionamiento futuro instala la capacidad.
+- [ ] Schemas expuestos y grants son explícitos y mínimos.
+- [ ] RLS y policies están verificadas con los roles reales.
+- [ ] Realtime y Storage se verificaron si aplican.
+- [ ] La migración es repetible y no depende de SQL manual fuera del historial.
+- [ ] Se actualizó documentación solo si cambió una regla o procedimiento durable.

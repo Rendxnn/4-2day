@@ -1,13 +1,5 @@
 # Core
 
-Logica pura compartida del dominio.
+Reglas puras compartidas de ParaHoy: transiciones, validación, precios, timeout y políticas de handoff. No depende de Hono, Cloudflare, Supabase, Meta ni React.
 
-Aqui deben vivir funciones que no dependan de Hono, Cloudflare, Supabase ni Meta:
-
-- transiciones de estado,
-- validacion de pedidos,
-- calculo de precios,
-- normalizacion de entradas,
-- reglas de timeout,
-- reglas de handoff.
-
+La interpretación de texto por IA no vive aquí; este paquete valida y calcula hechos deterministas.

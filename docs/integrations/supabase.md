@@ -1,233 +1,56 @@
-# Supabase
+# Integración con Supabase
 
-## Que es
+## Responsabilidades
 
-Supabase es una plataforma que ofrece Postgres administrado, Auth, storage, APIs y herramientas de administracion.
+- Postgres para datos globales y schemas por restaurante.
+- Auth para sesiones y miembros del dashboard.
+- Storage para imágenes, archivos de conocimiento y comprobantes.
+- Realtime para actualizaciones operativas autorizadas.
+- Data API/PostgREST como adaptador HTTP desde el Worker y para las excepciones frontend definidas.
 
-Para este proyecto lo usaremos principalmente como:
+## Credenciales
 
-- base de datos Postgres,
-- Auth para dashboard,
-- panel para inspeccionar datos,
-- Storage para comprobantes de transferencia y archivos operativos.
+- `SUPABASE_ANON_KEY`: clave pública usada con Auth/RLS; no concede autorización por sí sola.
+- `SUPABASE_SERVICE_ROLE_KEY`: secreto server-side con privilegios elevados; nunca se usa en el dashboard ni en variables `VITE_*`.
+- `SUPABASE_URL`: URL del proyecto correspondiente al ambiente.
 
-## Donde se aloja
+## Acceso
 
-Supabase se aloja en la nube de Supabase. Se crea un proyecto desde el dashboard de Supabase y ellos administran la instancia Postgres.
+El dashboard usa `apps/api` para datos y mutaciones de negocio. El acceso directo a Supabase se limita a Auth y suscripciones Realtime deliberadas. El Worker usa credenciales server-side y aun así aplica autorización de aplicación y aislamiento de tenant.
 
-El backend en Cloudflare Workers se conecta usando variables:
+## Schemas
 
-```txt
-SUPABASE_URL
-SUPABASE_SERVICE_ROLE_KEY
-DATABASE_URL
-```
+- `control`: datos globales, tenants, canales, membresías y administración.
+- `tenant_template`: plantilla canónica.
+- `tenant_demo`: sandbox.
+- `tenant_<slug>`: datos operativos de un restaurante.
 
-El dashboard puede usar:
+Consulta [Migraciones multi-tenant](../architecture/database-migrations.md) para baseline y rollout.
 
-```txt
-SUPABASE_URL
-SUPABASE_ANON_KEY
-```
+## Data API y RLS
 
-## Service role vs anon key
+La exposición del schema, los grants y RLS son controles distintos:
 
-### `SUPABASE_ANON_KEY`
+1. el schema debe estar entre los schemas expuestos;
+2. el rol necesita `USAGE` y privilegios mínimos sobre el objeto;
+3. RLS y sus policies determinan qué filas puede operar;
+4. Realtime requiere además publication cuando corresponda.
 
-Se puede usar en frontend junto con RLS.
-
-Debe tener permisos limitados.
-
-### `SUPABASE_SERVICE_ROLE_KEY`
-
-Solo backend.
-
-Tiene permisos altos y puede saltarse RLS.
-
-Nunca debe exponerse en frontend.
-
-## Como encaja con nuestro backend
-
-El backend no mete "logica dentro de Supabase" para el flujo conversacional.
-
-La logica vive en:
-
-```txt
-apps/api
-packages/core
-```
-
-Supabase guarda:
-
-- tenants,
-- menus,
-- conversaciones,
-- mensajes,
-- drafts,
-- ordenes,
-- alertas,
-- logs.
-
-## Auth
-
-Supabase Auth puede manejar login del dashboard.
-
-Modelo:
-
-- usuarios existen en `auth.users`,
-- relacion con tenant y rol en `control.tenant_users`,
-- roles iniciales: `encargado`, `trabajador`.
-
-Regla sugerida:
-
-- `encargado`: administra menu, usuarios, configuracion y ordenes.
-- `trabajador`: ve ordenes, atiende alertas y cambia estados operativos.
-
-## Schemas separados
-
-Usaremos:
-
-```txt
-control
-tenant_demo
-tenant_<slug>
-```
-
-`control` guarda datos globales.
-
-Cada tenant tiene sus tablas operativas.
-
-Regla de arquitectura recomendada:
-
-- `control` es schema global canonico,
-- `tenant_template` actua como template canonico de tenant,
-- `tenant_demo` queda como sandbox/demo tenant,
-- `tenant_<slug>` representa tenants operativos provisionados desde ese template.
-
-La referencia larga de estrategia de migraciones multi-tenant vive en:
-
-- [Arquitectura de migraciones de base de datos](../architecture/database-migrations.md)
-
-## Configuracion inicial recomendada
-
-1. Crear proyecto Supabase.
-2. Copiar `SUPABASE_URL`.
-3. Copiar `SUPABASE_ANON_KEY`.
-4. Copiar `SUPABASE_SERVICE_ROLE_KEY`.
-5. Obtener connection string Postgres para `DATABASE_URL`.
-6. Crear schema `control`.
-7. Crear tenant demo.
-8. Crear schema `tenant_demo`.
-9. Correr migraciones.
-10. Exponer schemas `control` y `tenant_demo` en Project Settings -> API -> Exposed schemas si el Worker usara REST API.
-11. Crear usuario demo en Supabase Auth.
-12. Asociar usuario demo al tenant en `control.tenant_users`.
+Supabase ya no garantiza que nuevas tablas queden expuestas automáticamente. El onboarding debe declarar grants explícitos y verificar acceso efectivo. No se corrigen permisos concediendo acceso amplio ni añadiendo `SECURITY DEFINER` sin revisar autorización y `EXECUTE`.
 
 ## Storage
 
-Usaremos Supabase Storage desde V1 para:
+Los buckets y políticas deben diferenciar contenido público y privado. Los comprobantes de pago son privados y se acceden mediante backend o URLs firmadas de corta duración. Las imágenes destinadas a carta/perfil pueden ser públicas si la política del producto lo requiere.
 
-- comprobantes de transferencia,
-- imagenes de productos,
-- menus cargados por el restaurante.
+Una subida con reemplazo necesita permisos compatibles con insert, select y update. Cada flujo debe probarse con el rol real, no solo con `service_role`.
 
-Para comprobantes:
+## Operación segura
 
-1. WhatsApp entrega un `media_id`.
-2. El Worker descarga el archivo desde Meta usando `META_ACCESS_TOKEN`.
-3. El Worker lo sube a Supabase Storage.
-4. Postgres guarda metadata en `payment_proofs`.
-5. Se crea una alerta `transfer_payment_review`.
-6. La orden queda en `payment_pending_review`.
-7. Para lectura desde dashboard, el backend genera una signed URL corta para el bucket privado y, si la descarga firmada responde `404`, hace fallback a `/storage/v1/object/authenticated/...` con credenciales server-side.
+- Aplicar migraciones únicamente desde `supabase/migrations`.
+- Confirmar CLI con `supabase --version` y descubrir comandos con `--help`.
+- Ejecutar advisors después de cambios de schema/seguridad.
+- Verificar RLS, grants, vistas, funciones y Storage con roles mínimos.
+- No registrar tokens, claves o URLs firmadas en documentación ni logs.
+- Fechar cualquier afirmación sobre un proyecto remoto; el repositorio no demuestra su estado actual.
 
-Bucket sugerido:
-
-```txt
-payment-proofs
-```
-
-Rutas sugeridas:
-
-```txt
-tenant_<slug>/<yyyy>/<mm>/<order_id>/<message_id>.<ext>
-```
-
-Para imagenes de productos:
-
-- el dashboard sube el archivo al API,
-- el API usa `SUPABASE_SERVICE_ROLE_KEY` para subirlo a Supabase Storage,
-- el bucket es publico porque las imagenes se muestran en el dashboard y pueden ser consumidas por canales publicos,
-- Postgres guarda solo la URL final en `tenant_<slug>.products.image_url`.
-
-Bucket:
-
-```txt
-product-images
-```
-
-Rutas:
-
-```txt
-<tenant_slug>/products/<uuid>.<ext>
-```
-
-No se recomienda guardar hotlinks externos como fuente final. Pueden fallar por CORS, bloqueo del host, expiracion de URLs, cambios del sitio origen o imagenes muy pesadas. La fuente estable debe ser nuestro Storage.
-
-## RLS
-
-Si el dashboard consulta directo Supabase:
-
-- RLS debe estar bien configurado.
-- Cada usuario solo ve su tenant.
-
-Si el dashboard consulta solo a nuestro API:
-
-- el API aplica permisos,
-- RLS sigue siendo recomendable, pero el control principal queda en backend.
-
-Recomendacion para MVP: dashboard consume API del backend para operaciones sensibles como ordenes, menu y alertas.
-
-## Frontera vigente: dashboard, API y Supabase
-
-### Solo API
-
-El dashboard llama a nuestro backend y el backend habla con Supabase.
-
-Ventajas:
-
-- una sola capa aplica reglas de negocio,
-- no se expone estructura interna de la DB,
-- mas facil cambiar schema sin romper frontend,
-- permisos por rol mas simples de centralizar,
-- mejor para operaciones sensibles como crear ordenes, cambiar estados y revisar pagos.
-
-Costos:
-
-- hay que construir mas endpoints,
-- un poco mas de trabajo inicial,
-- si el API falla, el dashboard queda limitado.
-
-### Supabase directo
-
-El dashboard llama directamente a Supabase usando `SUPABASE_ANON_KEY` y RLS.
-
-Ventajas:
-
-- desarrollo rapido en pantallas CRUD,
-- realtime/listeners mas directo,
-- menos endpoints propios para lecturas simples.
-
-Costos:
-
-- RLS debe estar impecable,
-- el frontend queda mas acoplado al schema,
-- reglas de negocio pueden terminar duplicadas,
-- operaciones multi-schema por tenant se vuelven mas delicadas,
-- es mas facil exponer datos si se configura mal.
-
-### Politica vigente
-
-El dashboard usa nuestro API para lecturas de negocio y todas las mutaciones: ordenes, pagos, alertas, conversaciones, catalogo y configuracion. El frontend usa Supabase directo solamente para Auth y la suscripcion Realtime de `orders`; el payload de Realtime no se usa como dato de negocio, sino para disparar una nueva consulta HTTP al API.
-
-Esta excepcion exige mantener RLS y publication de Realtime correctas por tenant. `SUPABASE_SERVICE_ROLE_KEY` sigue siendo exclusivamente backend.
+Referencias oficiales: [seguridad de Data API](https://supabase.com/docs/guides/api/securing-your-api) y [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security).

@@ -1,12 +1,8 @@
 # Prompts
 
-Prompts versionados para parser semantico.
+Prompts versionados para interpretación IA de ParaHoy.
 
-Reglas:
-
-- El prompt debe pedir JSON estructurado.
-- El modelo no calcula precios.
-- El modelo no decide disponibilidad.
-- El modelo debe poder devolver dudas o campos faltantes.
-- Cada cambio importante debe versionarse.
-
+- Todo texto conversacional debe llegar al modelo con estado y contexto autorizado.
+- La salida debe ser estructurada, validable y restringida a acciones permitidas.
+- El modelo no calcula precios, no decide disponibilidad final ni inventa IDs.
+- Un cambio del contrato requiere pruebas de salida inválida, ambigua y fuera de estado.

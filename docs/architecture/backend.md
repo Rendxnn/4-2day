@@ -1,286 +1,71 @@
 # Arquitectura backend
 
-## Relacion con el estandar de ingenieria
+## Stack y fronteras
 
-La estructura objetivo y las reglas obligatorias de arquitectura, TDD y documentacion viven en [Estandar de ingenieria y estructura del monorepo](./monorepo.md).
+- Cloudflare Workers + Hono reciben tráfico HTTP y ejecutan la aplicación.
+- Supabase aporta Postgres, Auth, Storage, Realtime y Data API.
+- Meta WhatsApp Cloud API entrega mensajes y recibe respuestas.
+- `packages/t-router` abstrae los proveedores de IA.
+- `packages/types` contiene contratos compartidos.
 
-Este documento describe principalmente:
+El Worker conserva credenciales privilegiadas y centraliza las reglas de negocio. El frontend solo usa Supabase directamente para Auth y Realtime controlado.
 
-- el runtime y flujo tecnico actual,
-- el reparto funcional del backend hoy,
-- la distancia entre el estado real y la estructura objetivo.
+## Flujo de un mensaje
 
-Si alguna descripcion historica de este archivo entra en conflicto con el estandar del monorepo, prevalece el estandar del monorepo.
-
-## Stack
-
-- Cloudflare Workers como runtime.
-- Hono como router HTTP.
-- Supabase Postgres como base de datos operativa.
-- PostgREST/Data API para acceso desde el Worker.
-- WhatsApp Cloud API como canal.
-- Gemini via `packages/t-router` como intérprete semántico primario, con OpenRouter como respaldo configurable.
-
-## Flujo tecnico real de un mensaje entrante
-
-Hoy el recorrido real del webhook es este:
-
-```txt
-Meta WhatsApp
-  -> POST /webhooks/whatsapp
-  -> whatsapp_webhook.logRawWebhook()
-  -> whatsapp_webhook.normalize()
-  -> tenant_resolver.resolveTenantForInboundMessage()
-  -> customer_service.findOrCreateCustomer()
-  -> conversation_service.loadOrCreateActiveConversation()
-  -> message_log.logInboundMessage()
-  -> customer_address_service.saveCustomerAddressFromWhatsAppLocation() si aplica
-  -> message_router.routeInboundMessage()
-  -> sendWhatsAppTextMessage()
-  -> message_log.logOutboundTextMessage()
+```text
+Meta webhook
+  -> verificación, normalización e idempotencia
+  -> resolución de tenant y conversación
+  -> persistencia inbound
+  -> transcripción cuando el mensaje es audio
+  -> interpretación IA del texto con estado y contexto canónico
+  -> acción controlada
+  -> validación y ejecución determinista
+  -> persistencia de estado, draft, order, eventos y alertas
+  -> composición y envío de respuesta
 ```
 
-## Orquestacion actual vs objetivo
+Todo texto debe recorrer la IA. Media, ubicación, autenticación, idempotencia, reglas de negocio y persistencia siguen siendo deterministas.
 
-### Estado actual
+## Contrato de acciones controladas
 
-El backend esta en una fase intermedia de migracion.
+El modelo recibe únicamente contexto autorizado: estado, draft, menú, opciones e IDs canónicos. Devuelve operaciones tipadas pertenecientes al conjunto permitido para ese estado, por ejemplo agregar o retirar líneas, configurar un producto, elegir fulfillment/pago, registrar datos de checkout, confirmar, editar, cancelar, mostrar menú o pedir humano.
 
-Hoy la estructura real es:
+Antes de mutar datos, el backend valida:
 
-- `routes/*` como entrypoints HTTP,
-- `features/*` como implementacion principal por dominio o flujo, aunque todavia con mezcla de roles internos,
-- `modules/*` como fachadas o costuras de compatibilidad heredadas,
-- `shared/*` para errores y helpers transversales.
+- que la operación pertenezca al conjunto permitido;
+- que IDs y evidencia correspondan al contexto enviado;
+- que catálogo, disponibilidad, cobertura y datos requeridos sean válidos;
+- que la transición sea compatible con el estado vigente;
+- que no haya una actualización concurrente que vuelva obsoleta la acción.
 
-Importante:
+Una salida inválida no cambia el pedido. El sistema solicita aclaración o genera el evento/alerta correspondiente. La IA nunca escribe en Supabase ni calcula el total.
 
-- esta NO es la estructura objetivo final,
-- la presencia actual de archivos grandes o mezclados NO debe tomarse como patron para codigo nuevo,
-- todo trabajo nuevo debe seguir la estructura definida en `docs/architecture/monorepo.md`.
+## Estado implementado y desalineación
 
-Piezas con avance parcial de separacion:
+El plan semántico estructurado y sus validaciones ya existen. Sin embargo, `features/chat-routing/router.ts` aún decide localmente algunos saludos, solicitudes de menú/estado y respuestas exactas de checkout, billing o configurables. Estos bypass deben retirarse: son deuda actual, no una excepción aceptada al principio de todo texto por IA.
 
-- `features/chat-routing/*`
-- `features/conversations/*`
-- `features/menu/*`
-- `features/product-configurator/*`
-- `features/payment-proofs/*`
-- `features/dashboard/router.ts`
-- `features/dashboard/auth.ts`
-- `features/dashboard/types.ts`
+## Módulos dueños
 
-Piezas que siguen claramente transicionales o incompletas:
+- `modules/whatsapp-webhook`: transporte, normalización y media.
+- `features/chat-routing`: interpretación y orquestación del pedido.
+- `features/conversations`: persistencia, estado y automatización por conversación.
+- `features/draft-orders` y `features/orders`: ciclo transaccional.
+- `features/payment-proofs`: archivos y revisión de transferencias.
+- `features/dashboard`: API operativa, administrativa y pública.
+- `features/carta-concierge` y `features/public-profile`: Presencia Digital.
+- `lib/supabase-rest`: acceso server-side a Data API.
 
-- `routes/dashboard.ts`, que permanece como fachada de compatibilidad; el router modular es el camino live,
-- `features/dashboard/router.ts`, que ya compone subrouters pero todavia concentra bastante logica y helpers,
-- `draft-orders` y `orders`, donde todavia hay mezcla de aplicacion, mapping y acceso a datos,
-- handlers del flujo conversacional, donde aun queda coordinacion pesada en pocos puntos.
+Las fachadas bajo nombres históricos solo preservan compatibilidad. La lógica nueva debe vivir en el feature dueño.
 
-### Objetivo demo-ready
+## Handoff y fallas
 
-Mantener el comportamiento actual, pero extraer y endurecer:
+Una conversación puede pausarse de forma transaccional, conservar su estado de reanudación y emitir alertas. Al reanudar se restauran las condiciones seguras definidas; las revisiones operativas de pago u orden no se cierran implícitamente.
 
-- consola humana de alertas y timeline,
-- alertas operativas cuando automatizacion este apagada,
-- mas pruebas conversacionales de caracterizacion.
+Las llamadas externas deben tener errores observables y evitar mutaciones parciales. La idempotencia del webhook y las validaciones de concurrencia protegen contra reintentos y respuestas obsoletas.
 
-## Modulos
+## API pública
 
-### `whatsapp_webhook`
+Los endpoints públicos de perfil, carta y concierge no requieren sesión. Deben limitarse a datos explícitamente públicos. Rate limiting, cuotas y presupuesto del concierge permanecen como brecha antes de escalar.
 
-Responsable de:
-
-- verificar challenge de Meta,
-- registrar raw webhook,
-- ignorar duplicados de webhook,
-- normalizar payloads,
-- iterar mensajes inbound,
-- marcar el webhook como procesado.
-
-### `tenant_resolver`
-
-Responsable de:
-
-- resolver tenant por `phone_number_id` y `waba_id`,
-- devolver `tenantId`, `slug`, `schemaName`, timezone y flags operativas.
-
-### `conversation_service`
-
-Responsable de:
-
-- crear o reutilizar conversacion activa,
-- extender expiracion a 30 minutos,
-- expirar conversaciones viejas,
-- guardar `state`, `context`, `clarification_attempts` y `manual_reason`.
-
-Estado de refactor:
-
-- hoy actua como fachada hacia `features/conversations/service.ts`,
-- ese feature ya mejoro separacion interna, pero todavia no representa por si solo la estructura objetivo final de `use-cases/domain/ports/adapters`.
-
-### `message_router`
-
-Sigue siendo el centro funcional del flujo conversacional, pero ya no todo vive en un solo archivo heredado.
-
-Responsable de:
-
-- delegar texto al parser semantico durante el experimento vigente,
-- mantener ramas previas para `manual`, media/comprobante y ubicacion,
-- operar el draft,
-- avanzar de estado,
-- mover a `manual`,
-- registrar metadata de routing en cada outbound.
-
-Estado de refactor:
-
-- `modules/message-router/router.ts` ya es una fachada,
-- la implementacion real vive en `features/chat-routing/router.ts`,
-- tracing, outbound y varios helpers ya salieron a modulos propios.
-- el subflujo de configurables y el subflujo de transferencia ya viven apoyados en features dedicados, aunque el coordinador central sigue grande y todavia no debe tomarse como ejemplo de forma final.
-
-### `semantic_parser`
-
-Es el interprete obligatorio para todo inbound textual procesable durante el experimento vigente. No es solo para pedidos o ediciones libres; el backend conserva la validacion y aplicacion deterministica. Devuelve un único plan de operaciones JSON para el estado actual y recibe IDs del menú activo, configurables y líneas existentes del draft; las operaciones de edición usan el ID exacto de la línea.
-
-Reglas:
-
-- devuelve operaciones tipadas, IDs ya presentes en contexto y confianza,
-- no calcula precios,
-- no inventa IDs canónicos,
-- no decide disponibilidad,
-- no decide cobertura ni transiciones finales.
-
-El backend valida el plan completo y aplica los cambios de draft y estado por RPC transaccional con control optimista de versión. Las decisiones como reutilizar billing, editar confirmación o decidir un fallback de transferencia están restringidas al estado en que son válidas y delegan al servicio de checkout existente.
-
-### `draft_order_service`
-
-Responsable de:
-
-- crear o reutilizar draft activo,
-- agregar/quitar/reemplazar items,
-- recalcular totales,
-- marcar el draft como listo o con aclaraciones.
-
-Estado de refactor:
-
-- hoy es una fachada hacia `features/draft-orders/service.ts`,
-- ya soporta snapshots estructurados de configurables y `unitPrice` resuelto,
-- todavia falta una migracion mas clara hacia `use-cases`, `domain`, `ports` y `adapters`.
-
-### `order_service`
-
-Responsable de:
-
-- convertir draft confirmado en orden,
-- crear `order_items`,
-- crear alertas de confirmacion,
-- manejar flujo de agotados y reemplazos del cliente.
-
-Estado de refactor:
-
-- hoy es una fachada hacia `features/orders/service.ts`,
-- todavia falta separar mejor responsabilidades internas y migrar hacia la estructura objetivo del estandar.
-
-### `dashboard_api`
-
-Responsable de:
-
-- exponer CRUD operativo de menu/catalogo,
-- exponer modulo de pedidos,
-- aceptar pedido,
-- devolver agotado,
-- reintentar notificaciones,
-- exponer configuracion de automatizacion,
-- exponer consola admin para restaurantes y miembros.
-
-Estado de refactor:
-
-- existe una capa historica importante en `routes/dashboard.ts`,
-- `features/dashboard/router.ts` ya concentra parte de la composicion nueva por dominio,
-- tipos y auth/tenant access ya salieron a modulos propios,
-- aun asi, la zona dashboard sigue en transicion y no debe describirse como refactor cerrado.
-
-El objetivo desde ahora no es seguir creando nuevas piezas sobre la mezcla actual, sino mover incrementalmente cada cambio hacia la forma canonica del estandar del monorepo.
-
-### `handoff_service`
-
-Responsable de:
-
-- persistir `human_intervention_alerts`,
-- dejar la conversacion en `manual`.
-
-### `product_configurator`
-
-Responsable de:
-
-- resolver configurables contra el menu real,
-- validar requeridos, ambiguedades, inactivos y limites,
-- construir el snapshot estructurado persistido en draft y order items,
-- calcular `priceDelta` y `resolvedUnitPrice`.
-
-### `payment_proofs`
-
-Responsable de:
-
-- detectar si un inbound de WhatsApp es un comprobante util,
-- descargar media real desde Meta,
-- subir el archivo a Supabase Storage,
-- persistir `payment_proofs`,
-- mover la orden a `payment_pending_review`,
-- exponer lectura y confirmacion minima desde dashboard,
-- resolver lectura privada desde backend con signed URL corta y fallback autenticado cuando Storage no sirve el objeto firmado.
-
-## IA en backend
-
-La IA no reemplaza la state machine.
-
-Secuencia actual:
-
-1. `message_router` maneja primero ramas no textuales y de seguridad.
-2. Todo texto procesable pasa a `semantic_parser` con estado, último prompt, menú y draft contextualizados.
-3. El backend valida el plan contra datos canónicos y lo aplica atómicamente; si falla, no muta y aclara o deriva sin matcher amplio de intención.
-4. Las direcciones escritas pasan por normalización, Google Geocoding y cobertura antes de permitir billing; el resultado se comunica en un outbound separado.
-5. Los diagnósticos registran proveedor, tipos de operación, resultado de cobertura y razón de aplicación/fallback sin texto ni dirección del cliente.
-
-## Idempotencia
-
-Meta puede reenviar webhooks cuando:
-
-- el endpoint tarda mucho,
-- responde con error,
-- hay problemas de red,
-- Meta no confirma entrega del evento.
-
-Hoy ya existe idempotencia inicial a nivel de webhook raw. La siguiente mejora natural es endurecer tambien unicidad por mensaje inbound/outbound persistido.
-
-## Fallas externas
-
-Si falla Gemini:
-
-- se intenta el proveedor semantico de respaldo configurado,
-- si no hay interpretacion segura, el flujo aclara o deriva a humano,
-- el outbound deja trazabilidad de fallback.
-
-Si falla Supabase:
-
-- no hay cola intermedia en este MVP,
-- por tanto la capacidad de reintento depende del comportamiento de Meta y de no perder el webhook antes de persistir.
-
-Si falla WhatsApp outbound:
-
-- el envio queda trazado en `messages`,
-- algunos caminos del dashboard ya permiten retry de notificacion al cliente,
-- todavia falta una consola humana completa para algunos casos fallidos.
-
-## Automatizacion activa/inactiva
-
-Cada tenant y sede puede tener `automation_enabled`.
-
-Estado actual:
-
-- si esta apagada, el webhook sigue registrando y el router no responde automaticamente.
-
-Gap actual:
-
-- todavia no se crea sistematicamente una alerta operativa cuando la automatizacion esta apagada y entra un mensaje.
+Consulta [Flujo conversacional](../flows/conversation-flow.md), [Presencia Digital](../flows/presence-digital.md) y [Supabase](../integrations/supabase.md).

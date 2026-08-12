@@ -1,11 +1,5 @@
 # Config
 
-Validacion y normalizacion de configuracion.
+Paquete técnico `@42day/config` para validar y normalizar configuración por ambiente. Los identificadores `42day` se conservan por compatibilidad; el producto es ParaHoy.
 
-Debe incluir:
-
-- validacion de variables de entorno,
-- configuracion por ambiente,
-- helpers de tenants,
-- defaults seguros.
-
+Los contratos deben aplicar defaults seguros y rechazar variables requeridas ausentes sin registrar sus valores.

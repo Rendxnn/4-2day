@@ -1,177 +1,59 @@
-# API
+# API de ParaHoy
 
-Backend principal de 42day para el flujo conversacional de WhatsApp, la operacion del dashboard y la consola admin.
+Worker de Cloudflare que recibe WhatsApp, orquesta pedidos y expone la API autenticada del dashboard y los endpoints públicos de Presencia Digital. El nombre técnico del paquete continúa siendo `@42day/api`.
 
-## Estado real hoy
+## Responsabilidades
 
-El API ya soporta el flujo principal `demo-ready`:
+- Verificar y procesar webhooks de Meta.
+- Resolver tenant, conversación y estado vigente.
+- Transcribir audio y enviar todo texto conversacional al intérprete de IA —dirección objetivo; consulta la deuda actual en [Estado](../../docs/current-status.md).
+- Validar y ejecutar acciones controladas sobre drafts y órdenes.
+- Operar catálogo, menú, pagos, cobertura, alertas, notificaciones y configuración.
+- Servir perfil, carta y concierge públicos.
+- Integrar Supabase Postgres/Auth/Storage/Realtime y proveedores de IA.
 
-- webhook inbound/outbound de WhatsApp Cloud API,
-- resolucion de tenant por canal,
-- persistencia de customers, conversations, messages, draft orders y orders,
-- menu real desde Supabase,
-- pedido guiado y natural con interpretacion semantica de todo texto durante el experimento vigente,
-- configurables con resolucion deterministica contra `product_options`,
-- checkout basico,
-- orden pendiente de revision del restaurante,
-- agotados, reemplazos y reintentos de notificacion,
-- comprobantes de transferencia con almacenamiento real y confirmacion minima,
-- endpoints operativos para dashboard restaurante,
-- endpoints admin para provisionar restaurantes y miembros.
+## Entradas principales
 
-La meta actual sigue siendo demos creibles y pruebas controladas, no un backend de produccion completa.
+- `src/index.ts`: composición de Hono.
+- `src/modules/whatsapp-webhook/`: webhook y normalización.
+- `src/features/chat-routing/`: orquestación conversacional.
+- `src/features/dashboard/`: rutas del dashboard y endpoints públicos.
+- `src/features/carta-concierge/` y `src/features/public-profile/`: Presencia Digital.
 
-Cambios recientes ya integrados:
+Las fachadas históricas bajo `src/modules/` pueden reexportar implementaciones nuevas; no deben recibir lógica adicional si existe un feature dueño de esa capacidad.
 
-- dashboard modular montado como router real,
-- configuracion de pagos por sede con cuentas bancarias y QR,
-- health de configuracion de pagos para dashboard,
-- `/dashboard/me` y `/dashboard/tenants` ya incluyen `role`,
-- aceptacion de ordenes por transferencia con mensaje automatico segun QR/cuentas activas,
-- fallback conversacional a efectivo cuando no hay metodo de transferencia activo,
-- eliminacion del camino legacy basado en `transfer_payment_instructions` desde el flujo vivo.
-
-## Nota de arquitectura del dashboard frontend
-
-El dashboard frontend sigue una arquitectura **Gradual Feature-First Hybrid**.
-
-Regla corta:
-
-- `apps/dashboard/src/App.tsx` debe quedar como shell/orquestador,
-- la logica grande de negocio debe moverse gradualmente a `apps/dashboard/src/features/<feature>/`,
-- esa migracion se hace junto con trabajo funcional futuro, no como refactor masivo aparte.
-
-La referencia canonica de esa decision esta en:
-
-- [docs/architecture/dashboard-frontend.md](/Users/rendxnn/Documents/freelance/42day/docs/architecture/dashboard-frontend.md:1)
-
-## Runtime y entrypoints
-
-- runtime: Cloudflare Workers
-- router HTTP: Hono
-- base de datos: Supabase Postgres via PostgREST/Data API
-- canal: WhatsApp Cloud API
-- parser semantico: Gemini como primario y OpenRouter como respaldo si el ambiente tiene el secret configurado
-
-Entrypoints actuales:
-
-- `src/index.ts`
-- `src/routes/health.ts`
-- `src/routes/whatsapp.ts`
-- `src/routes/dashboard.ts`
-
-## Estructura real
-
-Hoy el repo esta en una fase intermedia de refactor:
-
-- `src/routes/*`: entrypoints HTTP reales
-- `src/features/*`: implementacion nueva por dominio o flujo
-- `src/modules/*`: fachadas de compatibilidad interna
-- `src/shared/*`: helpers y errores transversales
-
-Piezas ya aterrizadas en `features/*`:
-
-- `chat-routing/*`
-- `conversations/*`
-- `menu/*`
-- `product-configurator/*`
-- `payment-proofs/*`
-- `orders/*`
-- `dashboard/auth.ts`
-- `dashboard/types.ts`
-- `dashboard/payment-configuration.ts`
-- `dashboard/order-customer-notifications.ts`
-- `dashboard/routes/*`
-
-## Deuda tecnica importante
-
-### 1. El dashboard modular ya esta montado, pero queda compatibilidad legacy
-
-El Worker ya monta `src/features/dashboard/router.ts` como router live.
-
-Eso significa que:
-
-- `src/routes/dashboard.ts` ya no es la fuente canonica,
-- hoy funciona como capa de compatibilidad fina para no romper imports y tests,
-- el refactor principal ya avanzo, pero todavia queda limpiar restos legacy y seguir partiendo responsabilidades.
-
-No deben agregarse nuevos comportamientos live de dashboard al router legacy salvo una razon de compatibilidad muy acotada.
-
-### 2. Orquestacion conversacional todavia concentrada
-
-`features/chat-routing/*` ya separo varias ramas utiles, pero el coordinador central sigue cargando bastante decision operativa.
-
-### 3. Fachadas heredadas aun delgadas
-
-`validation-engine` y `pricing-engine` siguen existiendo sobre todo por compatibilidad y no representan una capa de dominio fuerte por si solas.
-
-### 4. Migraciones multi-tenant
-
-`supabase/migrations` es la carpeta canonica. Cada cambio debe mantener `control` y `tenant_template`, y hacer rollout a los `tenant_*` existentes cuando corresponda. `packages/db/migrations` y sus seeds son referencia legacy y no reciben migraciones nuevas. El workflow detallado vive en `docs/architecture/database-migrations.md`.
-
-Las columnas de automatizacion conversacional viven en `conversations` de `tenant_template` y de cada tenant. La mutacion `change_conversation_automation` es una RPC tenant-local transaccional: bloquea la conversacion, comprueba `expectedUpdatedAt`, actualiza estado/evento y resuelve solo alertas de handoff de routing al reanudar. La API permite la accion a miembros `encargado` y `trabajador`; el frontend no tiene acceso directo a esa mutacion.
-
-### 5. Deuda fuerte en frontend que impacta el producto completo
-
-Aunque viva en `apps/dashboard`, hoy el frontend sigue teniendo deuda visible:
-
-- `apps/dashboard/src/App.tsx` es un archivo muy grande y concentra demasiada logica,
-- `apps/dashboard/src/orders.tsx` tambien concentra bastante UI y comportamiento,
-- esa deuda no bloquea demos, pero si vuelve mas fragil la evolucion del producto.
-
-## Validaciones que hoy si existen
-
-- el LLM no decide precios, disponibilidad ni IDs canonicos; el backend siempre valida y decide,
-- los configurables ya se resuelven contra `product_options` y `product_option_values`,
-- se validan requeridos, ambiguedades, valores inactivos, limites `maxSelect` y `priceDelta`,
-- el draft no puede confirmarse si faltan items, fulfillment, direccion de delivery, pago o configuracion pendiente,
-- el comprobante de transferencia queda ligado a orden y mensaje antes de pasar a revision humana minima.
-- la configuracion de pagos valida maximo 5 cuentas activas por sede y maximo 1 QR activo por sede,
-- al aceptar una orden `transfer`, el backend decide entre QR con caption, cuentas por texto o fallback a efectivo segun configuracion real de la sede,
-- si el cliente acepta efectivo en ese fallback, la orden aceptada cambia de `transfer` a `cash` y la conversacion se cierra.
-
-## Gaps reales que siguen abiertos
-
-- falta bandeja visual dedicada de alertas y timeline humano en dashboard,
-- si la automatizacion esta apagada, sigue pendiente una alerta por cada mensaje nuevo que llegue durante la pausa; el control seguro de pausar/reanudar ya existe,
-- falta rechazo formal de comprobante con pedido de reenvio,
-- `addressText` ya se aplica a direccion escrita y, con geocoding habilitado por sede, se valida y persiste en draft/orden; falta explotar mejor `confirmationText` y `questions`,
-- falta suite conversacional automatizada mas amplia,
-- falta automatizar la verificacion de migraciones y rollout remoto por tenant.
-
-## Testing actual
-
-`apps/api` si tiene pruebas automatizadas utiles:
-
-- resolvedor de configurables,
-- validacion de draft con configuracion pendiente,
-- helpers de comprobantes de transferencia,
-- normalizacion de media inbound de WhatsApp.
-
-Comandos principales:
+## Desarrollo
 
 ```bash
-corepack pnpm --filter @42day/api dev
-corepack pnpm --filter @42day/api typecheck
-corepack pnpm --filter @42day/api test
+pnpm --filter @42day/api dev
+pnpm --filter @42day/api typecheck
+pnpm --filter @42day/api test
 ```
 
-## Variables relevantes
+Variables requeridas o usadas según la capacidad:
 
-Backend:
-
-```txt
-APP_ENV
-SUPABASE_URL
-SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
+```text
+APP_BASE_URL
 META_VERIFY_TOKEN
 META_ACCESS_TOKEN
 META_PHONE_NUMBER_ID
-META_WHATSAPP_BUSINESS_ACCOUNT_ID
+META_WABA_ID
+META_GRAPH_API_VERSION
+SUPABASE_URL
+SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
 GEMINI_API_KEY
-OPENROUTER_API_KEY
-DASHBOARD_ALLOWED_ORIGINS
+GEMINI_MODEL
+OPENAI_API_KEY
+OPENAI_TRANSCRIPTION_MODEL
+AUDIO_TRANSCRIPTION_PROVIDER
 ```
 
-En local, el Worker toma secretos desde `apps/api/.dev.vars`.
+`SUPABASE_SERVICE_ROLE_KEY` y las claves de proveedores son secretos exclusivos del backend.
+
+## Documentación relacionada
+
+- [Arquitectura backend](../../docs/architecture/backend.md)
+- [Flujo conversacional](../../docs/flows/conversation-flow.md)
+- [Integración con WhatsApp](../../docs/integrations/whatsapp-cloud-api.md)
+- [Despliegue](../../docs/runbooks/deployment.md)

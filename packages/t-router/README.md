@@ -1,18 +1,5 @@
 # t-router
 
-Paquete vendorizado temporalmente dentro del monorepo de 42day.
+Paquete vendorizado como `@rendxnn/t-router` para abstraer proveedores de IA mientras no se publique externamente. El specifier `workspace:*` se reemplazará por una versión publicada cuando exista una entrega estable.
 
-Objetivo:
-
-- usar el router de IA sin depender todavia de publicacion externa,
-- mantener el nombre `@rendxnn/t-router` para que luego el cambio a npm sea simple,
-- evitar problemas de instalacion de dependencias Git en Windows.
-
-Cuando se publique externamente, el cambio esperado es volver a cambiar el
-specifier en consumidores de:
-
-```json
-"@rendxnn/t-router": "workspace:*"
-```
-
-a una version o tag publicado.
+La política conversacional y las acciones permitidas pertenecen a ParaHoy; este paquete solo resuelve proveedores y respuestas estructuradas.
