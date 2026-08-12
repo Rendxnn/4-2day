@@ -1,6 +1,8 @@
 # Estado actual de ParaHoy
 
-> Corte documental: 2026-08-11. Esta es la única fuente para capacidades implementadas, parciales, experimentales y deseadas. El estado de servicios externos debe verificarse y fecharse antes de afirmarlo.
+> Corte documental: 2026-08-12. Esta es la única fuente para capacidades implementadas, parciales,
+> experimentales, deseadas y deuda de ingeniería pendiente. El estado de servicios externos debe
+> verificarse y fecharse antes de afirmarlo.
 
 ## Resumen
 
@@ -89,6 +91,39 @@ El catálogo compartido ya permite que conversación y carta lean la misma base 
 - **Analytics — Actual, interno:** snapshots y vistas administrativas para seguimiento operativo. No se ofrece como analítica avanzada del producto.
 - **Recordatorios de almuerzo — Experimental:** existe preview y envío a clientes recientes. Permanece fuera del producto hasta contar con consentimiento, opt-out, plantillas aprobadas, segmentación y controles de frecuencia.
 
+## Backlog de salud de ingeniería
+
+Este inventario registra desorden verificado durante la adopción de Spec Kit. Todos sus ítems están
+**pendientes** y no representan fallos nuevos ni autorización para una refactorización transversal.
+Cada feature, mejora o mantenimiento debe revisar si toca uno de estos ítems:
+
+- si resolverlo es seguro, acotado y coherente con el objetivo del feature, se incluye expresamente en
+  su SPEC, plan y tareas;
+- si amplía materialmente el alcance, permanece pendiente y se registra la condición para abordarlo;
+- no se mezclan cambios masivos de formato, naming o estructura con comportamiento no relacionado.
+
+Las cantidades corresponden al corte de 2026-08-12 y deben volver a medirse antes de planear su
+corrección.
+
+| ID | Estado | Pendiente verificado | Resultado esperado / regla de abordaje |
+| --- | --- | --- | --- |
+| `ENG-001` | **Pendiente** | Los scripts `lint` de API y dashboard solo ejecutan `tsc --noEmit`; no existe lint ni formatter real. | Seleccionar e instalar enforcement después del piloto Spec Kit, sin confundir typecheck con lint. |
+| `ENG-002` | **Pendiente** | Hay 15 archivos TypeScript/TSX por encima de 500 líneas. Sobresalen `App.tsx` (5.360), `orders.tsx` (4.071), `LandingPage.tsx` (1.861), `chat-routing/semantic/order.ts` (964) y `dashboard/src/api.ts` (880). | Extraer responsabilidades al tocar cada área; no dividir por tamaño sin una frontera cohesiva y pruebas de comportamiento. |
+| `ENG-003` | **Pendiente** | `apps/api/src/modules` y `apps/api/src/features` conservan dueños duplicados o fachadas legacy, por lo que no siempre es evidente dónde añadir comportamiento. | El feature es el dueño; las fachadas solo reexportan temporalmente y cada migración define su condición de retiro. |
+| `ENG-004` | **Pendiente** | Conviven `camelCase.ts`, `kebab-case.ts`, `PascalCase.tsx` e imports internos con y sin extensión `.ts`. | Aplicar las convenciones de `CODESTYLE.md` a archivos nuevos y normalizar áreas existentes únicamente dentro de un cambio aprobado. |
+| `ENG-005` | **Pendiente** | Varias respuestas JSON, webhooks y otros inputs externos se convierten con `as T` sin validación runtime suficiente. | Recibir `unknown` y validar con schemas, parsers o type guards en cada frontera tocada. |
+| `ENG-006` | **Pendiente** | Persisten `any`, non-null assertions y casts de estados o formularios en rutas y UI, incluidos puntos sensibles de settings y checkout. | Sustituirlos por tipos de contexto, narrowing, uniones discriminadas o validación; cualquier excepción debe ser local y justificada. |
+| `ENG-007` | **Pendiente** | Existen llamadas `console.*` fuera del logger estructurado en carga de menú, settings y concierge. | Centralizar eventos en el logger seguro, con códigos estables y sin cuerpos externos ni datos sensibles. |
+| `ENG-008` | **Pendiente** | Hay 1.856 líneas TypeScript/TSX por encima de 120 caracteres y cinco archivos con CRLF, además de JSX comprimido. | Aplicar formatter en un checkpoint mecánico separado; evitar reformatear archivos no relacionados durante un feature. |
+| `ENG-009` | **Pendiente** | El script raíz `typecheck:direct` omite `apps/dashboard`, aunque el typecheck directo del dashboard pasa. | Incluir todos los workspaces aplicables o retirar el script redundante después de asegurar una ruta canónica equivalente. |
+| `ENG-010` | **Pendiente** | No existe automatización CI versionada bajo `.github/workflows`. | Añadir gates reproducibles de test, typecheck y build después de estabilizar el flujo local y antes de depender de merges automatizados. |
+| `ENG-011` | **Pendiente** | Una parte relevante de las pruebas inspecciona source o conserva estructura; los E2E reales y métricas de cobertura siguen incompletos. | Priorizar pruebas de comportamiento y añadir E2E según el riesgo de cada feature; las pruebas estructurales no son evidencia única. |
+| `ENG-012` | **Pendiente** | El repositorio fija `pnpm@9.15.0`, pero el runtime actual de Codex resuelve un fallback `pnpm@11.16.0`. | Hacer que el entorno de ejecución respete la versión fijada antes de usar los comandos raíz como gate automático. |
+
+El estándar aplicable a cualquier corrección de este backlog es `CODESTYLE.md`. El estado permanece
+**Pendiente** hasta que una implementación aprobada, sus pruebas y la documentación demuestren que el
+ítem completo —o un alcance explícitamente dividido— fue resuelto.
+
 ## Desalineaciones prioritarias
 
 1. El router determinista contradice el principio de IA para todo texto.
@@ -102,6 +137,8 @@ El catálogo compartido ya permite que conversación y carta lean la misma base 
 
 ## Cambios recientes
 
+- **2026-08-12:** integración de Spec Kit, constitución de ingeniería, arquitectura, testing,
+  CODESTYLE y backlog incremental de salud técnica.
 - **2026-08-11:** integración de carta con mesero/concierge IA y perfil público.
 - **2026-08-01:** endurecimiento para demo, observabilidad y manejo de errores.
 - **2026-07-29:** paquete de carta IA y perfil público, incluido soporte standalone.

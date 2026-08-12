@@ -33,10 +33,26 @@ Validaciones principales:
 ```bash
 pnpm typecheck
 pnpm test
-pnpm --filter @42day/dashboard build
+pnpm build
 ```
 
 La preparación completa de variables, Supabase y Meta está en [Setup local](./docs/runbooks/local-setup.md).
+
+## Flujo de desarrollo
+
+ParaHoy usa GitHub Spec Kit con Codex. Todo cambio funcional se especifica, aclara y planea antes de
+modificar código; después se implementa por fases verificadas y se contrasta con el SPEC hasta
+converger.
+
+- [Constitución](./.specify/memory/constitution.md)
+- [Instrucciones para agentes](./AGENTS.md)
+- [Arquitectura canónica](./ARCHITECTURE.md)
+- [Estándar de código](./CODESTYLE.md)
+- [Estrategia de pruebas](./TESTING.md)
+
+El flujo completo se ejecuta en una tarea de Codex con `$speckit-specify`, `$speckit-clarify`,
+`$speckit-plan`, `$speckit-checklist`, `$speckit-tasks`, `$speckit-analyze`, `$speckit-implement` y
+`$speckit-converge`. Los artefactos de cada cambio viven en `specs/<número>-<feature>/`.
 
 ## Estructura
 
@@ -47,11 +63,13 @@ apps/
 packages/       contratos y utilidades compartidas
 supabase/       migraciones canónicas
 docs/           arquitectura, flujos, integraciones y runbooks
+.specify/       constitución, templates y scripts de Spec Kit
+specs/          SPEC, planes, tareas y evidencia por feature
 ```
 
 ## Documentación
 
-- [Arquitectura](./docs/architecture/monorepo.md)
+- [Arquitectura](./ARCHITECTURE.md)
 - [Flujo de pedidos](./docs/flows/conversation-flow.md)
 - [Presencia Digital](./docs/flows/presence-digital.md)
 - [Despliegue](./docs/runbooks/deployment.md)
