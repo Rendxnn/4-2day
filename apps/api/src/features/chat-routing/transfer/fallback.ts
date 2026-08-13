@@ -4,7 +4,7 @@ import {
   buildTransferFallbackCashConfirmedMessage,
   buildTransferFallbackPaymentPrompt,
 } from "../../../modules/message-router/response-composer";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import { moveToManual } from "../manual/handoff";
 import { handleClarification } from "../manual/handoff";
 import { sendAndLogText } from "../outbound/send";
@@ -80,13 +80,10 @@ export async function tryHandleTransferFallbackPaymentMethod(
       }).catch(() => undefined),
     ]);
 
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "completed",
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, buildTransferFallbackCashConfirmedMessage());
     return true;

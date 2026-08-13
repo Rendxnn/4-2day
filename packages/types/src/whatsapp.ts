@@ -16,7 +16,7 @@ export type NormalizedWhatsAppLocation = {
 };
 
 export type NormalizedInboundMessage = {
-  provider: "whatsapp_cloud";
+  provider: "whatsapp_cloud" | "headless";
   providerMessageId: string;
   phoneNumberId: string;
   wabaId?: string;

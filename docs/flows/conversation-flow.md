@@ -16,6 +16,11 @@ Audio se transcribe y su texto entra al mismo contrato. Ubicación, imágenes, d
 6. El backend aplica la acción, recalcula hechos y persiste de forma consistente.
 7. Se compone una respuesta basada en el resultado real, se registra y se envía.
 
+La misma secuencia posterior a la normalización puede ejecutarse desde la CLI local headless. En ese
+caso el texto sigue entrando al plan semántico y las respuestas usan una entrega `captured`, sin
+solicitudes a Meta. La pausa manual conserva el inbound y evita IA; al reactivar se reclama únicamente
+el último inbound headless pendiente y se procesa una vez con captura `manual_resume`.
+
 Si ninguna acción es segura, el pedido no cambia. El cliente recibe una aclaración o la conversación pasa a intervención humana según el error.
 
 ## Acciones conceptuales

@@ -1,7 +1,7 @@
 import type { DraftOrder } from "@42day/types";
 import { getOrCreateActiveDraftOrder, updateDraftOrderCoverage, updateDraftOrderPaymentMethod } from "../../draft-orders/service";
 import { saveCustomerAddressFromText, saveCustomerAddressFromWhatsAppLocation } from "../../../modules/customer-address-service/customer-address-service";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import { buildAddressSavedPrompt } from "../../../modules/message-router/response-composer";
 import { loadCurrentMenu } from "../shared/helpers";
 import { sendAndLogText } from "../outbound/send";
@@ -49,13 +49,10 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
 
   if (input.message.type !== "location") {
     if (signals.cannotShareLocation) {
-      await updateConversationState({
-        env: input.env,
-        schemaName: input.tenant.schemaName,
-        conversationId: input.conversation.id,
+      await updateConversationStateForRoute(input, {
         state: "awaiting_address",
         resetClarificationAttempts: true,
-      }).catch(() => undefined);
+      });
       await sendAndLogText(input, buildWrittenAddressHelpPrompt());
       return true;
     }
@@ -133,13 +130,10 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
       });
 
       if (!writtenAddressValidation.isInsideCoverage && !settings?.allowOutOfCoverageOrders) {
-        await updateConversationState({
-          env: input.env,
-          schemaName: input.tenant.schemaName,
-          conversationId: input.conversation.id,
+        await updateConversationStateForRoute(input, {
           state: "awaiting_fulfillment_type",
           resetClarificationAttempts: true,
-        }).catch(() => undefined);
+        });
         await sendAndLogText(input, settings?.outOfCoverageMessage ?? "Lo sentimos, no tenemos cobertura para esa direccion. Puedes recoger en el local.");
         return true;
       }
@@ -206,13 +200,10 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
       return true;
     }
 
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_address",
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
     await sendAndLogText(
       input,
       buildAddressValidationRetryPrompt(),
@@ -276,13 +267,10 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
     });
 
     if (!validation.isInsideCoverage && !settings?.allowOutOfCoverageOrders) {
-      await updateConversationState({
-        env: input.env,
-        schemaName: input.tenant.schemaName,
-        conversationId: input.conversation.id,
+      await updateConversationStateForRoute(input, {
         state: "awaiting_fulfillment_type",
         resetClarificationAttempts: true,
-      }).catch(() => undefined);
+      });
       await sendAndLogText(input, settings?.outOfCoverageMessage ?? "Lo sentimos, no tenemos cobertura para tu ubicacion. Puedes recoger en el local.");
       return true;
     }
@@ -304,13 +292,10 @@ export async function tryHandleDeliveryAddress(input: RouteInboundMessageInput, 
       deliveryAddressDetails: address?.addressDetails,
       deliveryFeeFixed: menu.location?.deliveryFeeFixed,
     });
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_fulfillment_type",
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
     await sendAndLogText(input, settings?.outOfCoverageMessage ?? "No pudimos validar el domicilio. Puedes recoger en el local.");
     return true;
   }

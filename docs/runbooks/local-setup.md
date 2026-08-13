@@ -42,6 +42,42 @@ Nunca pongas `SUPABASE_SERVICE_ROLE_KEY` ni claves de IA en variables `VITE_*`.
 
 No ejecutes `packages/db/migrations` ni seeds históricos como procedimiento de setup.
 
+## CLI headless local
+
+La CLI headless solo acepta el Supabase local descrito por `supabase/config.toml`. Copia la plantilla,
+completa la clave service role del stack local y no la versiones:
+
+```bash
+cp apps/api/.env.headless.local.example apps/api/.env.headless.local
+pnpm --silent --filter @42day/api headless
+```
+
+Cada invocación recibe un único objeto JSON por stdin. `start`, `turn`, `inspect`, `reconcile` y
+`close` escriben un único envelope JSON en stdout; los diagnósticos seguros van a stderr. El archivo
+real se rechaza si falta `APP_ENV=local`, debug, el `project_id`, un endpoint loopback o los schemas
+`control`/`tenant_template`. La sesión persiste en `apps/api/.headless-journal/` y `close` no borra los
+datos tenant-locales. Cada sesión mantiene un lock durante todo el turno; turnos de sesiones distintas
+pueden avanzar en paralelo. Si el proceso muere con un turno activo, el siguiente uso solo puede
+continuar después de que el lock huérfano supere su umbral y ese turno queda `indeterminate`, sin replay
+automático. La identidad reutilizada debe conservar tenant, proyecto local y origen `headless`.
+
+Después de provisionar un tenant local, ejecuta `scripts/bash/sync-local-supabase-schemas.sh`. El helper
+actualiza tanto `[api].schemas` como `authenticator.pgrst.db_schemas` mediante la función local existente,
+para que PostgREST y la CLI compartan la misma lista de tenants expuestos.
+
+Para validar o limpiar una corrida headless usa el helper cerrado por defecto:
+
+```bash
+scripts/bash/reset-local-headless-chat.sh --check
+scripts/bash/reset-local-headless-chat.sh --reset --confirm local-headless-reset
+```
+
+`--check` solo valida `project_id=42day`, puertos loopback y los tenants sintéticos
+`headless-demo`/`headless-isolation-b`. El segundo comando es deliberadamente destructivo para la base
+local: ejecuta únicamente `supabase db reset --local` y mueve el journal exacto a un archivo recuperable.
+Nunca debe ejecutarse con una URL remota. Después del reset, verifica el esquema con
+`supabase db lint --local` y revisa los advisors disponibles en la versión instalada de Supabase.
+
 ## Ejecutar
 
 En terminales separadas:

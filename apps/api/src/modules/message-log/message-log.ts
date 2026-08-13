@@ -1,6 +1,7 @@
 import type { NormalizedInboundMessage, OutboundMessageResult } from "@42day/types";
 import { createSupabaseRestClient } from "../../lib/supabase-rest";
 import type { ApiBindings } from "../../lib/bindings";
+import type { CapturedResponse } from "../../features/chat-routing/ports";
 
 type MessageLogRow = {
   id: string;
@@ -44,6 +45,40 @@ export async function logInboundMessage(input: {
   return logged;
 }
 
+export async function checkpointNormalizedInbound(input: {
+  env: ApiBindings;
+  schemaName: string;
+  messageId: string;
+  manifest: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  return createSupabaseRestClient(input.env).rpc<Record<string, unknown>>({
+    schema: "control",
+    functionName: "claim_normalized_inbound",
+    args: {
+      p_schema_name: input.schemaName,
+      p_message_id: input.messageId,
+      p_manifest: input.manifest,
+    },
+  });
+}
+
+export async function finalizeNormalizedInbound(input: {
+  env: ApiBindings;
+  schemaName: string;
+  messageId: string;
+  postconditions: Record<string, unknown>;
+}): Promise<Record<string, unknown>> {
+  return createSupabaseRestClient(input.env).rpc<Record<string, unknown>>({
+    schema: "control",
+    functionName: "finalize_normalized_inbound",
+    args: {
+      p_schema_name: input.schemaName,
+      p_message_id: input.messageId,
+      p_postconditions: input.postconditions,
+    },
+  });
+}
+
 export async function logOutboundTextMessage(input: {
   env: ApiBindings;
   schemaName: string;
@@ -51,8 +86,8 @@ export async function logOutboundTextMessage(input: {
   text: string;
   result: OutboundMessageResult;
   metadata?: Record<string, unknown>;
-}): Promise<void> {
-  await logOutboundMessage({
+}): Promise<string> {
+  return logOutboundMessage({
     env: input.env,
     schemaName: input.schemaName,
     conversationId: input.conversationId,
@@ -92,7 +127,7 @@ export async function loadRecentConversationMessages(input: {
     schema: input.schemaName,
     table: "messages",
     query,
-  }).catch(() => []);
+  });
 
   return rows.map((row) => ({
     id: row.id,
@@ -103,6 +138,33 @@ export async function loadRecentConversationMessages(input: {
   }));
 }
 
+export async function loadManualResumeCapturedResponses(input: {
+  env: ApiBindings;
+  schemaName: string;
+  conversationId: string;
+}): Promise<CapturedResponse[]> {
+  const rows = await createSupabaseRestClient(input.env).select<{
+    payload: unknown;
+  }>({
+    schema: input.schemaName,
+    table: "messages",
+    query: {
+      select: "payload",
+      conversation_id: `eq.${input.conversationId}`,
+      direction: "eq.outbound",
+      provider: "eq.headless",
+      order: "created_at.asc,id.asc",
+    },
+  });
+  return rows.flatMap((row) => {
+    if (!isRecord(row.payload) || !isRecord(row.payload.internal) || !isRecord(row.payload.internal.capture)) return [];
+    const capture = row.payload.internal.capture;
+    return capture.captureContext === "manual_resume" && typeof capture.delivery === "string"
+      ? [capture as unknown as CapturedResponse]
+      : [];
+  });
+}
+
 export async function logOutboundImageMessage(input: {
   env: ApiBindings;
   schemaName: string;
@@ -110,8 +172,8 @@ export async function logOutboundImageMessage(input: {
   caption?: string;
   result: OutboundMessageResult;
   metadata?: Record<string, unknown>;
-}): Promise<void> {
-  await logOutboundMessage({
+}): Promise<string> {
+  return logOutboundMessage({
     env: input.env,
     schemaName: input.schemaName,
     conversationId: input.conversationId,
@@ -130,25 +192,39 @@ async function logOutboundMessage(input: {
   text?: string;
   result: OutboundMessageResult;
   metadata?: Record<string, unknown>;
-}): Promise<void> {
+}): Promise<string> {
   const client = createSupabaseRestClient(input.env);
 
-  await client.insert({
+  const [logged] = await client.insertReturning<{ id: string }>({
     schema: input.schemaName,
     table: "messages",
     rows: {
       conversation_id: input.conversationId,
       direction: "outbound",
-      provider: "whatsapp_cloud",
-      provider_message_id: input.result.providerMessageId,
+      provider: resolveOutboundProvider(input.result, input.metadata),
+      provider_message_id: input.result.providerMessageId ?? null,
       message_type: input.messageType,
       text: input.text,
       payload: appendInternalPayload(input.result.raw, input.metadata),
       status: input.result.ok
-        ? input.result.providerMessageId ? "sent" : "send_attempted"
+        ? resolveOutboundStatus(input.result, input.metadata)
         : "failed",
     },
   });
+  if (!logged?.id) throw new Error("message_log.outbound_insert_failed");
+  return logged.id;
+}
+
+function resolveOutboundProvider(_result: OutboundMessageResult, metadata: Record<string, unknown> | undefined): string {
+  return metadata?.provider === "headless" ? "headless" : "whatsapp_cloud";
+}
+
+function resolveOutboundStatus(result: OutboundMessageResult, metadata: Record<string, unknown> | undefined): string {
+  if (metadata?.deliveryStatus === "captured") {
+    return "captured";
+  }
+
+  return result.providerMessageId ? "sent" : "send_attempted";
 }
 
 function appendInternalPayload(raw: unknown, metadata: Record<string, unknown> | undefined): unknown {
@@ -167,4 +243,8 @@ function appendInternalPayload(raw: unknown, metadata: Record<string, unknown> |
     raw,
     internal: metadata,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

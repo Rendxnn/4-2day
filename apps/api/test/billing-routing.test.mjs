@@ -57,23 +57,19 @@ test("acepta las formas naturales de conservar los datos de facturación sin dep
   assert.equal(finalConfirmationSignals.confirmation, null);
 });
 
-test("routes normal and electronic billing before the semantic fallback", async () => {
+test("routes billing text through the semantic catalog before backend execution", async () => {
   const source = await readFile(routerPath, "utf8");
   const semanticFallbackIndex = source.indexOf("if (await trySemanticFallback(input))");
-  const normalBillingIndex = source.indexOf('input.conversation.state === "awaiting_normal_billing_info"');
-  const electronicBillingIndex = source.indexOf('input.conversation.state === "awaiting_electronic_billing_info"');
-
-  assert.ok(normalBillingIndex > -1 && normalBillingIndex < semanticFallbackIndex);
-  assert.ok(electronicBillingIndex > -1 && electronicBillingIndex < semanticFallbackIndex);
-  assert.match(source, /tryHandleNormalBillingInfo\(input/);
-  assert.match(source, /tryHandleElectronicBillingInfo\(input\)/);
+  assert.ok(semanticFallbackIndex > -1);
+  assert.doesNotMatch(source, /tryHandleNormalBillingInfo\(input/);
+  assert.doesNotMatch(source, /tryHandleElectronicBillingInfo\(input\)/);
+  assert.match(await readFile(new URL("../src/features/chat-routing/semantic/operation-plan.ts", import.meta.url), "utf8"), /set_billing/);
 });
 
-test("un saludo durante checkout conserva el flujo real y no muestra un falso inicio", async () => {
+test("un saludo durante checkout se interpreta con el estado vigente", async () => {
   const source = await readFile(routerPath, "utf8");
 
-  assert.match(source, /isActiveOrderState\(input\.conversation\.state\)/);
-  assert.match(source, /Tienes un pedido en curso/);
-  assert.match(source, /Si prefieres empezar de nuevo, escribe "cancelar"/);
-  assert.match(source, /buildMenuText\(menu\)/);
+  assert.match(source, /all_text_requires_semantic_plan/);
+  assert.doesNotMatch(source, /isActiveOrderState\(input\.conversation\.state\)/);
+  assert.doesNotMatch(source, /buildMenuText\(menu\)/);
 });

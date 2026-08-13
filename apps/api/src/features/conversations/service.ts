@@ -10,6 +10,10 @@ import {
   selectRecentConversations,
   updateConversationRow,
 } from "./repository";
+import { createHeadlessCapture } from "../chat-routing/outbound/capture";
+import { processNormalizedChatTurn } from "../chat-routing/process-normalized-chat-turn";
+import type { NormalizedInboundMessage, Tenant } from "@42day/types";
+import type { SemanticGenerationPort } from "../chat-routing/ports";
 
 export function createNewConversation(input: {
   id: string;
@@ -34,6 +38,25 @@ export function createNewConversation(input: {
 
 export function conversationNeedsExpiration(conversation: Conversation, now = new Date()): boolean {
   return isConversationExpired(conversation.expiresAt, now);
+}
+
+export async function touchConversationForInbound(input: {
+  env: ApiBindings;
+  schemaName: string;
+  conversation: Conversation;
+  now?: Date;
+}): Promise<Conversation> {
+  const now = input.now ?? new Date();
+  return mapConversationRow(await updateConversationRow({
+    env: input.env,
+    schemaName: input.schemaName,
+    conversationId: input.conversation.id,
+    patch: {
+      last_inbound_at: now.toISOString(),
+      expires_at: getConversationExpiration(now).toISOString(),
+      updated_at: now.toISOString(),
+    },
+  }));
 }
 
 export async function loadOrCreateActiveConversation(input: {
@@ -217,6 +240,8 @@ export async function changeConversationAutomation(input: {
   enabled: boolean;
   expectedUpdatedAt: string;
   changedBy: string;
+  /** Internal test seam; dashboard and production callers never provide it. */
+  semanticGeneration?: SemanticGenerationPort;
 }): Promise<Conversation> {
   const row = await createSupabaseRestClient(input.env).rpc<Record<string, unknown>>({
     schema: input.schemaName,
@@ -228,7 +253,81 @@ export async function changeConversationAutomation(input: {
       p_changed_by: input.changedBy,
     },
   });
-  return mapConversationRow(row as Parameters<typeof mapConversationRow>[0]);
+  const conversation = mapConversationRow(row as Parameters<typeof mapConversationRow>[0]);
+  if (input.enabled) {
+    await processPendingHeadlessInbound({ ...input, conversation });
+  }
+  return conversation;
+}
+
+async function processPendingHeadlessInbound(input: {
+  env: ApiBindings;
+  schemaName: string;
+  conversationId: string;
+  enabled: boolean;
+  expectedUpdatedAt: string;
+  changedBy: string;
+  conversation: Conversation;
+  semanticGeneration?: SemanticGenerationPort;
+}): Promise<void> {
+  const client = createSupabaseRestClient(input.env);
+  const claim = await client.rpc<{
+    status: "claimed" | "none";
+    id?: string;
+    provider_message_id?: string | null;
+    message_type?: string;
+    text?: string | null;
+  }>({
+    schema: "control",
+    functionName: "claim_pending_headless_inbound",
+    args: { p_schema_name: input.schemaName, p_conversation_id: input.conversationId },
+  });
+  if (claim.status !== "claimed" || !claim.id || !claim.text) return;
+
+  const tenant = await resolveTenantForConversation(input.env, input.schemaName);
+  const message: NormalizedInboundMessage = {
+    provider: "headless",
+    providerMessageId: claim.provider_message_id ?? `headless-resume:${claim.id}`,
+    phoneNumberId: "headless",
+    from: "headless-resume",
+    type: claim.message_type === "text" ? "text" : "unknown",
+    text: claim.text,
+    raw: { source: "headless", type: claim.message_type },
+  };
+  const headlessEffectIds: string[] = [];
+  await processNormalizedChatTurn({
+    env: input.env,
+    tenant,
+    conversation: input.conversation,
+    message,
+    traceId: `headless-resume-${claim.id}`,
+    loggedMessageId: claim.id,
+    source: "headless",
+    captureContext: "manual_resume",
+    originatingTurnId: claim.provider_message_id ?? claim.id,
+    delivery: createHeadlessCapture({ captureContext: "manual_resume", originatingTurnId: claim.provider_message_id ?? claim.id }),
+    headlessEffectIds,
+    semanticGeneration: input.semanticGeneration,
+  });
+}
+
+async function resolveTenantForConversation(env: ApiBindings, schemaName: string): Promise<Tenant> {
+  const [row] = await createSupabaseRestClient(env).select<{
+    id: string;
+    name: string;
+    slug: string;
+    schema_name: string;
+    status: Tenant["status"];
+    timezone: string;
+    currency: string;
+    automation_enabled: boolean;
+  }>({
+    schema: "control",
+    table: "tenants",
+    query: { select: "id,name,slug,schema_name,status,timezone,currency,automation_enabled", schema_name: `eq.${schemaName}`, limit: 1 },
+  });
+  if (!row) throw new Error("tenant.not_found");
+  return { id: row.id, name: row.name, slug: row.slug, schemaName: row.schema_name, status: row.status, timezone: row.timezone, currency: row.currency, automationEnabled: row.automation_enabled };
 }
 
 export async function updateConversationContext(input: {

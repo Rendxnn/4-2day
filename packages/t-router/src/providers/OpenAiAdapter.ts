@@ -9,11 +9,16 @@ const defaultOpenAiModel = "gpt-4.1-mini";
 
 export class OpenAiAdapter implements AiProviderAdapter {
   readonly providerId = "openai" as const;
+  private readonly fetcher: ProviderFetch;
+  private readonly timeoutMs: number;
 
   constructor(
-    private readonly fetcher: ProviderFetch = fetch,
-    private readonly timeoutMs = 45000,
-  ) {}
+    fetcher: ProviderFetch = fetch,
+    timeoutMs = 45000,
+  ) {
+    this.fetcher = fetcher;
+    this.timeoutMs = timeoutMs;
+  }
 
   async execute<T = unknown>(input: { context: ProviderContext; task: AiTask }): Promise<AiTaskResult<T>> {
     if (input.context.authMode !== "api_key") {

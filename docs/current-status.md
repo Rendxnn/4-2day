@@ -1,6 +1,6 @@
 # Estado actual de ParaHoy
 
-> Corte documental: 2026-08-12. Esta es la única fuente para capacidades implementadas, parciales,
+> Corte documental: 2026-08-13. Esta es la única fuente para capacidades implementadas, parciales,
 > experimentales, deseadas y deuda de ingeniería pendiente. El estado de servicios externos debe
 > verificarse y fecharse antes de afirmarlo.
 
@@ -30,6 +30,13 @@
 - Pausa/reanudación de automatización por conversación, alertas de intervención y transcripción visible desde el pedido.
 - Dashboard de pedidos, menú, catálogo, pagos, cobertura, configuración y administración de restaurantes/miembros.
 - Plan semántico estructurado con operaciones tipadas, lista permitida por estado y validación determinista antes de aplicar cambios.
+- Chat headless local sin dobles fijos en runtime, conectado a Gemini real, con captura sin Meta, snapshots agregados seguros,
+  manifiesto durable y reconciliación compartida. La última corrida opt-in completó ocho planes reales
+  con `gemini-flash-lite-latest`, persistió un pedido y no usó fixtures; la configuración dedicada se
+  restauró a `gemini-2.5-flash`.
+- La transcripción sanitizada de la orden real exitosa está en `specs/001-headless-chat/implementation-evidence.md`:
+  `add_product → set_fulfillment → set_billing → set_payment_method → confirm_order`, pedido pendiente
+  de revisión por COP 18.000 y todos los outbound capturados localmente.
 - Trazas de routing y eventos operativos.
 
 ### Parcial
@@ -41,13 +48,15 @@
 
 ### Desalineación con el diseño acordado
 
-El objetivo es que **todo texto del cliente pase por IA** y produzca una acción controlada según el estado. Hoy `chat-routing/router.ts` ejecuta antes del plan semántico varias decisiones por señales locales, incluidas entradas de menú/saludo, consulta de estado y respuestas exactas de checkout, billing o configuración.
+El objetivo es que **todo texto del cliente pase por IA** y produzca una acción controlada según el estado. El router actual envía el texto al plan semántico compartido antes de ejecutar checkout, billing o configuración. Permanece una reconciliación determinista posterior que vincula menciones textuales explícitas con IDs del menú cuando el modelo omitió un producto; debe conservarse solo como guardia de canonicalización y seguir bajo revisión de paridad.
 
-La eliminación de esos atajos es trabajo de código pendiente. Las reglas deterministas de infraestructura y negocio sí permanecen: validan y ejecutan la acción de IA, pero no deben interpretar la intención textual.
+Las reglas deterministas de infraestructura y negocio validan y ejecutan la acción de IA. La guardia de
+canonicalización de menciones debe demostrar que no interpreta una intención independiente ni crea
+acciones fuera del plan estructurado.
 
 ### Pendiente
 
-- Enviar todo texto al plan de IA, incluida la conversación guiada, y probar que no quedan bypass textuales.
+- Completar la prueba de que la canonicalización posterior al plan no constituye un bypass textual.
 - Garantizar que una acción inválida, ambigua o no permitida conserve el estado y genere aclaración segura.
 - Completar bandeja, timeline independiente, compositor humano y acciones desde alertas.
 - Pulir rechazo de comprobantes y mensajes asociados.
@@ -126,16 +135,36 @@ El estándar aplicable a cualquier corrección de este backlog es `CODESTYLE.md`
 
 ## Desalineaciones prioritarias
 
-1. El router determinista contradice el principio de IA para todo texto.
-2. `automation_enabled` mezcla disponibilidad operativa con modalidad comercial pública.
-3. Presencia Digital aún no cumple la landing, branding, dominio y autogestión estándar.
-4. El paquete completo no tiene carrito web multi-producto ni entitlements propios.
-5. La operación humana de conversaciones y alertas es incompleta.
-6. El concierge público no tiene rate limiting/cuotas visibles.
-7. El onboarding de schemas necesita exposición Data API y grants explícitos, además de RLS; no puede asumirse que una tabla nueva quede expuesta automáticamente.
-8. No hay automatización CI versionada en `.github/workflows`.
+1. `automation_enabled` mezcla disponibilidad operativa con modalidad comercial pública.
+2. Presencia Digital aún no cumple la landing, branding, dominio y autogestión estándar.
+3. El paquete completo no tiene carrito web multi-producto ni entitlements propios.
+4. La operación humana de conversaciones y alertas es incompleta.
+5. El concierge público no tiene rate limiting/cuotas visibles.
+6. El onboarding de schemas necesita exposición Data API y grants explícitos, además de RLS; no puede asumirse que una tabla nueva quede expuesta automáticamente.
+7. No hay automatización CI versionada en `.github/workflows`.
 
 ## Cambios recientes
+
+- **2026-08-13:** se ejecutaron recorridos E2E headless reales con Gemini `gemini-2.5-flash`, sin
+  dobles fijos, con cinco planes JSON válidos, pedido persistido, captura sin Meta, snapshots de draft/order,
+  IDs opacos de efectos, retry, conflicto, inspección y cierre. Se corrigió la persistencia anidada del
+  manifiesto mediante una migración forward, se añadieron fingerprints hash y se retiró `aiFixtureId`
+  del protocolo operativo de la CLI. El journal ahora serializa actualizaciones concurrentes, las
+  sesiones expiran por inactividad, los turnos pausados quedan en `pending` y la reactivación reclama
+  atómicamente el último inbound headless. El journal mantiene lock durante todo el turno y vincula
+  identidad/sesión a tenant, proyecto local y origen `headless`; un turno huérfano queda `indeterminate`
+  antes de permitir continuidad. Las suites directas actuales: API 243 pruebas, 226 pasaron y 17
+  opt-in omitidas; la integración headless local ejecutó 76 pruebas, 75 pasaron y 1 E2E externo se
+  omitió. La corrida opt-in más reciente de ocho turnos completó 8/8 planes con Gemini real y persistió
+  un pedido; una corrida anterior recibió 429 por cuota agotada y quedó como fallback seguro. La
+  reconciliación ahora usa el resultado autoritativo de Supabase en CLI
+  y dashboard, y el journal rechaza cruces de tenant/identidad e IDs duplicados. El flujo completo
+  local con doble inline cubre ocho turnos, pedido, retry, conflicto, inspect, close, pausa/reactivación
+  y fallos después de draft/orden sin replay; la ruta HTTP autenticada del dashboard usa la misma decisión.
+
+- **2026-08-12:** se incorporó el límite post-normalización compartido y la base de CLI headless local
+  con captura sin Meta, journal de sesiones, envelope seguro, reconciliación y migración de
+  checkpoint.
 
 - **2026-08-12:** integración de Spec Kit, constitución de ingeniería, arquitectura, testing,
   CODESTYLE y backlog incremental de salud técnica.

@@ -1,15 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: template (unratified) -> 1.0.0
+- Version change: 1.0.0 -> 2.0.0
 - Modified principles:
-  - Placeholder Principle 1 -> I. Especificación antes de implementación
-  - Placeholder Principle 2 -> II. Arquitectura y responsabilidades antes del código
-  - Placeholder Principle 3 -> III. Pruebas de comportamiento y trazabilidad
-  - Placeholder Principle 4 -> IV. Entrega por fases verificadas
-  - Placeholder Principle 5 -> V. Invariantes de producto e IA controlada
-- Added sections:
-  - Restricciones de producto y técnicas
-  - Flujo de desarrollo y gates de calidad
+  - V. Invariantes de producto e IA controlada -> excepción explícita durante control humano o
+    automatización deshabilitada, con procesamiento IA único al reanudar cuando corresponda
+- Added sections: none
 - Removed sections: none
 - Follow-up TODOs: none
 -->
@@ -51,14 +46,19 @@ convergencia de Spec Kit hasta que no quede trabajo requerido.
 
 ### V. Invariantes de producto e IA controlada
 La implementación DEBE preservar invariantes de ParaHoy, aislamiento tenant, autorización,
-idempotencia y validación server-side. En ParaHoy Pedidos, todo texto del cliente DEBE ser interpretado
-por IA con estado actual y contexto permitido. La IA DEBE devolver únicamente una acción controlada
-permitida para el estado; NO DEBE escribir en base de datos, calcular precios autoritativos, decidir
-disponibilidad final ni inventar identificadores canónicos. El backend DEBE validar esquema, evidencia,
-permisos, reglas, concurrencia y transición antes de mutar. Una salida inválida, ambigua, obsoleta o
-incompatible DEBE conservar el estado anterior y seguir el camino seguro de aclaración o error. El
-procesamiento determinista permanece obligatorio para infraestructura, seguridad y ejecución, pero NO
-DEBE evitar la IA al interpretar texto del cliente.
+idempotencia y validación server-side. En ParaHoy Pedidos, todo texto del cliente que sea procesable por
+automatización DEBE ser interpretado por IA con estado actual y contexto permitido. Mientras una
+conversación esté bajo control humano o su automatización efectiva esté deshabilitada, el inbound DEBE
+persistirse, pero NO DEBE interpretarse por IA ni producir respuesta automática. Al reactivar la
+automatización, si el último mensaje continúa siendo un inbound pendiente del cliente, el backend DEBE
+reclamarlo y procesarlo exactamente una vez mediante el mismo flujo IA; los inbound anteriores
+reemplazados por mensajes posteriores NO DEBEN procesarse como turnos independientes. La IA DEBE
+devolver únicamente una acción controlada permitida para el estado; NO DEBE escribir en base de datos,
+calcular precios autoritativos, decidir disponibilidad final ni inventar identificadores canónicos. El
+backend DEBE validar esquema, evidencia, permisos, reglas, concurrencia y transición antes de mutar. Una
+salida inválida, ambigua, obsoleta o incompatible DEBE conservar el estado anterior y seguir el camino
+seguro de aclaración o error. El procesamiento determinista permanece obligatorio para infraestructura,
+seguridad y ejecución, pero NO DEBE evitar la IA al interpretar texto que la automatización procese.
 
 ## Restricciones de producto y técnicas
 
@@ -122,4 +122,4 @@ Toda revisión de SPEC, plan y pull request DEBE comprobar las reglas aplicables
 DEBE ser limitada, temporal, justificada en el plan y tener dueño y condición de retiro. Conveniencia,
 presión de tiempo, autonomía del agente o un patrón legacy no son excepciones suficientes.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-12 | **Last Amended**: 2026-08-12
+**Version**: 2.0.0 | **Ratified**: 2026-08-12 | **Last Amended**: 2026-08-12

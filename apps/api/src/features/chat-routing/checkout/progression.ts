@@ -1,6 +1,6 @@
 import type { DraftOrder, MenuItem, TodayMenuPayload } from "@42day/types";
 import { getOrCreateActiveDraftOrder } from "../../draft-orders/service";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import {
   buildAddMorePrompt,
   buildCurrentDraftText,
@@ -45,14 +45,11 @@ export async function continueAfterItemAdded(input: RouteInboundMessageInput, pa
     return;
   }
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_more_items",
     context: buildGuidedContext(payload.menu, payload.selectedItem),
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(input, buildAddMorePrompt(draft));
 }
@@ -88,28 +85,22 @@ export async function proceedToNextOrderStep(input: RouteInboundMessageInput, pa
   }));
 
   if (draft.items.length === 0) {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_guided_item_selection",
       context: payload?.context,
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, buildEmptyDraftPrompt());
     return;
   }
 
   if (!draft.fulfillmentType) {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_fulfillment_type",
       context: payload?.context,
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, [buildCurrentDraftText(draft), buildFulfillmentPrompt(menu)].join("\n\n"));
     return;
@@ -125,14 +116,11 @@ export async function proceedToNextOrderStep(input: RouteInboundMessageInput, pa
       locationId: draft.locationId,
     });
     if (!settings?.allowOutOfCoverageOrders) {
-      await updateConversationState({
-        env: input.env,
-        schemaName: input.tenant.schemaName,
-        conversationId: input.conversation.id,
+      await updateConversationStateForRoute(input, {
         state: "awaiting_address",
         context: payload?.context,
         resetClarificationAttempts: true,
-      }).catch(() => undefined);
+      });
 
       await sendAndLogText(input, buildCoverageRequestMessage({
         requestLocationMessage: settings?.requestLocationMessage ?? buildDeliveryAddressPrompt(),
@@ -148,27 +136,21 @@ export async function proceedToNextOrderStep(input: RouteInboundMessageInput, pa
   }
 
   if (!draft.paymentMethod) {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_payment_method",
       context: payload?.context,
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, buildPaymentPrompt(draft, menu));
     return;
   }
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_confirmation",
     context: payload?.context,
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(input, buildOrderSummaryText(draft, draft.paymentMethod));
 }

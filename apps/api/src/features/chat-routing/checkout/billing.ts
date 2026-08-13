@@ -1,7 +1,7 @@
 import type { DraftOrder, TodayMenuPayload } from "@42day/types";
 import { getOrCreateActiveDraftOrder, updateDraftOrderBilling } from "../../draft-orders/service";
 import { loadCustomerBillingProfiles, saveCustomerBillingProfile, toOrderBillingDetails } from "../../../modules/customer-billing-service/customer-billing-service";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import {
   buildBillingReusePrompt,
   buildElectronicBillingPrompt,
@@ -77,10 +77,7 @@ export async function tryHandleBillingReuseConfirmation(input: RouteInboundMessa
   }
 
   if (resolved.changeBilling) {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: pending.type === "electronic" ? "awaiting_electronic_billing_info" : "awaiting_normal_billing_info",
       context: {
         ...input.conversation.context,
@@ -90,7 +87,7 @@ export async function tryHandleBillingReuseConfirmation(input: RouteInboundMessa
         },
       },
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, pending.type === "electronic" ? buildElectronicBillingPrompt() : buildNormalBillingPrompt({
       fulfillmentType: draft.fulfillmentType,
@@ -214,10 +211,7 @@ export async function startBillingStep(
   const electronicBillingEnabled = await isElectronicBillingEnabled(input, payload.draft.locationId);
 
   if (normalProfile) {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_billing_reuse_confirmation",
       context: {
         ...(payload.context ?? input.conversation.context),
@@ -232,7 +226,7 @@ export async function startBillingStep(
         },
       },
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, [
       payload.prefix,
@@ -244,17 +238,14 @@ export async function startBillingStep(
     return;
   }
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_normal_billing_info",
     context: {
       ...(payload.context ?? input.conversation.context),
       pendingBilling: pendingContext,
     },
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(input, [payload.prefix, buildNormalBillingPrompt({
     fulfillmentType: payload.draft.fulfillmentType,
@@ -277,10 +268,7 @@ async function switchToElectronicBilling(input: RouteInboundMessageInput): Promi
   const electronicProfile = profiles.find((profile) => profile.type === "electronic");
 
   if (electronicProfile) {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_billing_reuse_confirmation",
       context: {
         ...input.conversation.context,
@@ -293,7 +281,7 @@ async function switchToElectronicBilling(input: RouteInboundMessageInput): Promi
         },
       },
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, buildBillingReusePrompt({
       billingLabel: "electrónica",
@@ -310,10 +298,7 @@ async function switchToElectronicBilling(input: RouteInboundMessageInput): Promi
     return true;
   }
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
     state: "awaiting_electronic_billing_info",
     context: {
       ...input.conversation.context,
@@ -323,17 +308,14 @@ async function switchToElectronicBilling(input: RouteInboundMessageInput): Promi
       },
     },
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(input, buildElectronicBillingPrompt());
   return true;
 }
 
 async function moveToNormalBilling(input: RouteInboundMessageInput, draft: DraftOrder): Promise<void> {
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_normal_billing_info",
     context: {
       ...input.conversation.context,
@@ -343,7 +325,7 @@ async function moveToNormalBilling(input: RouteInboundMessageInput, draft: Draft
       },
     },
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(input, [
     buildElectronicBillingUnavailableMessage(),

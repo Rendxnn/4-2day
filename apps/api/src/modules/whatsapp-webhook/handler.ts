@@ -4,7 +4,8 @@ import { loadOrCreateActiveConversation } from "../conversation-service/conversa
 import { saveCustomerAddressFromWhatsAppLocation } from "../customer-address-service/customer-address-service";
 import { findOrCreateCustomer } from "../customer-service/customer-service";
 import { logInboundMessage, logOutboundTextMessage } from "../message-log/message-log";
-import { routeInboundMessage, type RouteInboundMessageInput } from "../message-router/router";
+import { processNormalizedChatTurn } from "../../features/chat-routing/process-normalized-chat-turn";
+import type { RouteInboundMessageInput } from "../../features/chat-routing/shared/types";
 import { resolveTenantForInboundMessage } from "../tenant-resolver/tenant-resolver";
 import { normalizeWhatsAppPayload } from "./normalize";
 import { logRawWhatsAppWebhook, markRawWhatsAppWebhookFailed, markRawWhatsAppWebhookProcessed } from "./webhook-event-log";
@@ -212,13 +213,6 @@ async function handleInboundMessage(env: ApiBindings, message: NormalizedInbound
     }
 
     stage = "inbound_message_persistence";
-    const loggedMessage = await logInboundMessage({
-      env,
-      schemaName: tenant.schemaName,
-      conversationId: conversation.id,
-      message: routedMessage,
-    });
-
     stage = "location_persistence";
     await saveCustomerAddressFromWhatsAppLocation({
       env,
@@ -234,9 +228,9 @@ async function handleInboundMessage(env: ApiBindings, message: NormalizedInbound
       conversation,
       message: routedMessage,
       traceId,
-      loggedMessageId: loggedMessage.id,
+      source: "whatsapp_cloud",
     };
-    await routeInboundMessage(routeInput);
+    await processNormalizedChatTurn(routeInput);
     logEvent("info", "message.processing.completed", "El mensaje entrante terminó su procesamiento.", {
       environment: env.APP_ENV,
       traceId,

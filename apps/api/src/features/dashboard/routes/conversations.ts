@@ -5,6 +5,7 @@ import type { ApiBindings } from "../../../lib/bindings";
 import { createSupabaseRestClient, SupabaseRestError } from "../../../lib/supabase-rest";
 import type { DashboardVariables } from "../types";
 import { mapConversationAutomation } from "../support/orders";
+import { deriveReconciliationEvidence, reconcileNormalizedChatTurn } from "../../chat-routing/reconcile-normalized-chat-turn";
 import {
   mapConversationTranscriptMessage,
   parseTranscriptLimit,
@@ -81,4 +82,49 @@ conversationsDashboardRoutes.patch("/:tenantSlug/conversations/:conversationId/a
     if (code.includes("conversation_stale") || code === "conversation.row_missing") return c.json({ error: "conversation_stale" }, 409);
     throw error;
   }
+});
+
+conversationsDashboardRoutes.post("/:tenantSlug/conversations/:conversationId/messages/:messageId/reconciliation", async (c) => {
+  const body = await c.req.json<{ observedOutcome?: "effects_applied" | "no_effects"; expectedUpdatedAt?: string }>().catch(() => undefined);
+  if (!body?.observedOutcome || !body.expectedUpdatedAt) return c.json({ error: "invalid_reconciliation" }, 400);
+  const tenant = c.get("tenant");
+  const conversationId = c.req.param("conversationId");
+  const messageId = c.req.param("messageId");
+  const reconciliationSelect = ["id,conversation_id,direction,provider,status", "payload,created_at"].join(",");
+  const rows = await createSupabaseRestClient(c.env).select<{
+    id: string;
+    conversation_id: string | null;
+    direction: string;
+    provider: string;
+    status: string;
+    payload: unknown;
+    created_at: string;
+  }>({
+    schema: tenant.schema_name,
+    table: "messages",
+    query: { select: reconciliationSelect, id: `eq.${messageId}`, conversation_id: `eq.${conversationId}`, limit: 1 },
+  });
+  const message = rows[0];
+  if (!message) return c.json({ error: "message_not_found" }, 404);
+  if (message.direction !== "inbound" || message.provider !== "headless") return c.json({ error: "message_not_reconcilable" }, 409);
+  if (message.created_at !== body.expectedUpdatedAt) return c.json({ error: "stale_reconciliation" }, 409);
+  const decision = reconcileNormalizedChatTurn({
+    observation: body.observedOutcome,
+    evidence: deriveReconciliationEvidence({ messageStatus: message.status, payload: message.payload }),
+  });
+  let authoritativeOutcome = decision.outcome;
+  let authoritativeReason = decision.reasonCode;
+  if (decision.outcome !== "indeterminate") {
+    const authoritative = await createSupabaseRestClient(c.env).rpc<{
+      status: "applied" | "failed" | "indeterminate";
+      reason_code?: string;
+    }>({
+      schema: "control",
+      functionName: "reconcile_normalized_inbound",
+      args: { p_schema_name: tenant.schema_name, p_message_id: message.id, p_observed_outcome: body.observedOutcome },
+    });
+    authoritativeOutcome = authoritative.status;
+    authoritativeReason = authoritative.reason_code ?? authoritativeReason;
+  }
+  return c.json({ status: authoritativeOutcome === "indeterminate" ? "indeterminate" : "reconciled", outcome: authoritativeOutcome, reasonCode: authoritativeReason, messageId: message.id, updatedAt: message.created_at });
 });

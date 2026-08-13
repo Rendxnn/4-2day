@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parahoy.local/contracts/headless-command-v1.schema.json",
+  "title": "ParaHoy headless command v1",
+  "oneOf": [
+    { "$ref": "#/$defs/start" },
+    { "$ref": "#/$defs/turn" },
+    { "$ref": "#/$defs/inspect" },
+    { "$ref": "#/$defs/reconcile" },
+    { "$ref": "#/$defs/close" }
+  ],
+  "$defs": {
+    "tenantSlug": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$"
+    },
+    "identityId": {
+      "type": "string",
+      "pattern": "^hid_[A-Za-z0-9_-]{6,96}$"
+    },
+    "sessionId": {
+      "type": "string",
+      "pattern": "^hss_[A-Za-z0-9_-]{6,96}$"
+    },
+    "turnId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "command", "tenant"],
+      "properties": {
+        "version": { "const": 1 },
+        "command": { "const": "start" },
+        "tenant": { "$ref": "#/$defs/tenantSlug" },
+        "identityId": { "$ref": "#/$defs/identityId" }
+      }
+    },
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "command", "tenant", "sessionId", "turnId", "text"],
+      "properties": {
+        "version": { "const": 1 },
+        "command": { "const": "turn" },
+        "tenant": { "$ref": "#/$defs/tenantSlug" },
+        "sessionId": { "$ref": "#/$defs/sessionId" },
+        "turnId": { "$ref": "#/$defs/turnId" },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "inspect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "command", "tenant", "sessionId"],
+      "properties": {
+        "version": { "const": 1 },
+        "command": { "const": "inspect" },
+        "tenant": { "$ref": "#/$defs/tenantSlug" },
+        "sessionId": { "$ref": "#/$defs/sessionId" }
+      }
+    },
+    "reconcile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "command", "tenant", "sessionId", "turnId", "observedOutcome"],
+      "properties": {
+        "version": { "const": 1 },
+        "command": { "const": "reconcile" },
+        "tenant": { "$ref": "#/$defs/tenantSlug" },
+        "sessionId": { "$ref": "#/$defs/sessionId" },
+        "turnId": { "$ref": "#/$defs/turnId" },
+        "observedOutcome": { "enum": ["effects_applied", "no_effects"] }
+      }
+    },
+    "close": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "command", "tenant", "sessionId"],
+      "properties": {
+        "version": { "const": 1 },
+        "command": { "const": "close" },
+        "tenant": { "$ref": "#/$defs/tenantSlug" },
+        "sessionId": { "$ref": "#/$defs/sessionId" }
+      }
+    }
+  }
+}

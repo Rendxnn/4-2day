@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parahoy.local/contracts/headless-result-v1.schema.json",
+  "title": "ParaHoy headless result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "command",
+    "status",
+    "tenant",
+    "session",
+    "turn",
+    "responses",
+    "before",
+    "after",
+    "routing",
+    "effects",
+    "warnings",
+    "error"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "command": {
+      "enum": ["start", "turn", "inspect", "reconcile", "close", "unknown"]
+    },
+    "status": {
+      "enum": [
+        "started",
+        "pending",
+        "applied",
+        "repeated",
+        "inspected",
+        "reconciled",
+        "closed",
+        "rejected",
+        "failed",
+        "indeterminate"
+      ]
+    },
+    "tenant": {
+      "oneOf": [{ "$ref": "#/$defs/tenant" }, { "type": "null" }]
+    },
+    "session": {
+      "oneOf": [{ "$ref": "#/$defs/session" }, { "type": "null" }]
+    },
+    "turn": {
+      "oneOf": [{ "$ref": "#/$defs/turn" }, { "type": "null" }]
+    },
+    "responses": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/response" }
+    },
+    "before": {
+      "oneOf": [{ "$ref": "#/$defs/snapshot" }, { "type": "null" }]
+    },
+    "after": {
+      "oneOf": [{ "$ref": "#/$defs/snapshot" }, { "type": "null" }]
+    },
+    "routing": {
+      "oneOf": [{ "$ref": "#/$defs/routing" }, { "type": "null" }]
+    },
+    "effects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/effect" }
+    },
+    "warnings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/code" }
+    },
+    "error": {
+      "oneOf": [{ "$ref": "#/$defs/error" }, { "type": "null" }]
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[A-Z][A-Z0-9_]*$"
+    },
+    "tenant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9-]+$"
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "identityId", "state", "createdAt", "closedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "identityId": { "$ref": "#/$defs/opaqueId" },
+        "state": { "enum": ["active", "closed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "closedAt": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "retriable"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "state": {
+          "enum": ["claimed", "processing", "pending", "applied", "rejected", "failed", "indeterminate"]
+        },
+        "retriable": { "type": "boolean" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "delivery", "captureContext", "redacted", "redactionCodes"],
+      "properties": {
+        "type": { "enum": ["text", "image"] },
+        "text": { "type": "string", "maxLength": 8192 },
+        "caption": { "type": "string", "maxLength": 8192 },
+        "delivery": { "const": "captured" },
+        "captureContext": { "enum": ["turn", "manual_resume"] },
+        "redacted": { "type": "boolean" },
+        "redactionCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/code" }
+        },
+        "originatingTurnId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "text" } } },
+          "then": { "required": ["text"] }
+        },
+        {
+          "if": { "properties": { "captureContext": { "const": "manual_resume" } } },
+          "then": { "required": ["originatingTurnId"] }
+        }
+      ]
+    },
+    "money": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "conversationSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "automation", "expiry"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "state": { "type": "string", "maxLength": 64 },
+        "automation": { "type": "string", "maxLength": 64 },
+        "expiry": { "enum": ["active", "expired", "unknown"] }
+      }
+    },
+    "draftSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "itemCount", "subtotal", "deliveryFee", "total"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "state": { "type": "string", "maxLength": 64 },
+        "itemCount": { "type": "integer", "minimum": 0 },
+        "subtotal": { "$ref": "#/$defs/money" },
+        "deliveryFee": { "$ref": "#/$defs/money" },
+        "total": { "$ref": "#/$defs/money" },
+        "fulfillment": { "type": ["string", "null"], "maxLength": 64 },
+        "payment": { "type": ["string", "null"], "maxLength": 64 },
+        "requiredFieldsComplete": { "type": "boolean" }
+      }
+    },
+    "orderSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "total"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "state": { "type": "string", "maxLength": 64 },
+        "total": { "$ref": "#/$defs/money" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversation", "draft", "order"],
+      "properties": {
+        "conversation": {
+          "oneOf": [{ "$ref": "#/$defs/conversationSnapshot" }, { "type": "null" }]
+        },
+        "draft": {
+          "oneOf": [{ "$ref": "#/$defs/draftSnapshot" }, { "type": "null" }]
+        },
+        "order": {
+          "oneOf": [{ "$ref": "#/$defs/orderSnapshot" }, { "type": "null" }]
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch", "reasonCode", "ai"],
+      "properties": {
+        "branch": { "type": "string", "minLength": 1, "maxLength": 96 },
+        "reasonCode": { "$ref": "#/$defs/code" },
+        "ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["attempted", "used", "provider", "model", "outcome", "operationTypes"],
+          "properties": {
+            "attempted": { "type": "boolean" },
+            "used": { "type": "boolean" },
+            "provider": { "type": ["string", "null"], "maxLength": 64 },
+            "model": { "type": ["string", "null"], "maxLength": 128 },
+            "outcome": { "type": ["string", "null"], "maxLength": 64 },
+            "operationTypes": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+            }
+          }
+        }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "status"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "status": { "enum": ["created", "updated", "captured", "skipped", "failed"] },
+        "id": {
+          "oneOf": [{ "$ref": "#/$defs/opaqueId" }, { "type": "null" }]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "retriable", "safeMessage"],
+      "properties": {
+        "code": { "$ref": "#/$defs/code" },
+        "category": {
+          "enum": ["input", "security", "tenant", "session", "ai", "dependency", "conflict", "internal"]
+        },
+        "retriable": { "type": "boolean" },
+        "safeMessage": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    }
+  }
+}

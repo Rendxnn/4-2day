@@ -27,6 +27,18 @@ Meta webhook
 
 Todo texto debe recorrer la IA. Media, ubicación, autenticación, idempotencia, reglas de negocio y persistencia siguen siendo deterministas.
 
+### Límite post-normalización y captura local
+
+`processNormalizedChatTurn` es el caso de uso compartido para los adaptadores de WhatsApp y headless.
+El adaptador headless construye un mensaje de texto ya normalizado y selecciona `HeadlessCapture` en
+el puerto de salida; nunca importa el cliente de Meta ni se publica como ruta del Worker. La captura
+completa se conserva en el mensaje tenant-local y el observer recibe únicamente una proyección
+redactada.
+
+El checkpoint del manifiesto validado se guarda en `messages.payload.internal.execution_manifest`
+antes de los efectos. La reconciliación usa evidencia autoritativa, no reejecuta IA ni dependencias y
+mantiene `indeterminate` cuando observa efectos parciales.
+
 ## Contrato de acciones controladas
 
 El modelo recibe únicamente contexto autorizado: estado, draft, menú, opciones e IDs canónicos. Devuelve operaciones tipadas pertenecientes al conjunto permitido para ese estado, por ejemplo agregar o retirar líneas, configurar un producto, elegir fulfillment/pago, registrar datos de checkout, confirmar, editar, cancelar, mostrar menú o pedir humano.

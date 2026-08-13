@@ -11,6 +11,8 @@ apps/api/.dev.vars
 apps/api/.worker-secrets.staging
 apps/api/.worker-secrets.production
 apps/api/.wrangler/
+apps/api/.env.headless.local
+apps/api/.headless-journal/
 .dev-logs/
 
 dist/
@@ -29,3 +31,5 @@ Thumbs.db
 .pnpm-store/
 .vercel
 .env*
+!.env.example
+!apps/api/.env.headless.local.example

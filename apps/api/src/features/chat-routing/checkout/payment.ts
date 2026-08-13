@@ -1,5 +1,5 @@
 import { getOrCreateActiveDraftOrder, updateDraftOrderPaymentMethod } from "../../draft-orders/service";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import { buildDeliveryAddressPrompt, buildOrderSummaryText } from "../../../modules/message-router/response-composer";
 import { loadCurrentMenu } from "../shared/helpers";
 import { sendAndLogText } from "../outbound/send";
@@ -40,13 +40,10 @@ export async function tryHandlePaymentMethod(input: RouteInboundMessageInput, si
       locationId: updatedDraft.locationId ?? menu.location?.id,
     });
     if (!settings?.allowOutOfCoverageOrders) {
-      await updateConversationState({
-        env: input.env,
-        schemaName: input.tenant.schemaName,
-        conversationId: input.conversation.id,
+      await updateConversationStateForRoute(input, {
         state: "awaiting_address",
         resetClarificationAttempts: true,
-      }).catch(() => undefined);
+      });
       await sendAndLogText(input, buildCoverageRequestMessage({
         requestLocationMessage: settings?.requestLocationMessage ?? buildDeliveryAddressPrompt(),
         tryGeocodeWrittenAddresses: settings?.tryGeocodeWrittenAddresses,
@@ -60,13 +57,10 @@ export async function tryHandlePaymentMethod(input: RouteInboundMessageInput, si
     return true;
   }
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_confirmation",
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(input, buildOrderSummaryText(updatedDraft, signals.paymentMethod));
   return true;

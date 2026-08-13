@@ -43,7 +43,8 @@ export type SemanticOperation = {
     | "accept_cash_fallback"
     | "keep_transfer"
     | "request_human"
-    | "show_menu";
+    | "show_menu"
+    | "get_order_status";
   menuItemId?: string | null;
   draftOrderItemId?: string | null;
   quantity?: number | null;
@@ -63,14 +64,14 @@ export type SemanticOperationPlan = {
 };
 
 export type SemanticOperationExecution = {
-  providerId: "gemini" | "openrouter";
+  providerId: "gemini" | "openrouter" | "test_double";
   fallbackFromProviderId?: "gemini" | "openrouter";
   plan: SemanticOperationPlan;
   attempts: SemanticProviderAttempt[];
 };
 
 export type SemanticProviderAttempt = {
-  provider: "gemini" | "openrouter";
+  provider: "gemini" | "openrouter" | "test_double";
   model?: string;
   outcome: "succeeded" | "failed" | "not_configured";
   durationMs?: number;
@@ -87,12 +88,17 @@ export type SemanticProviderAttempt = {
 };
 
 export class SemanticOperationPlanInferenceError extends Error {
+  readonly attempts: SemanticProviderAttempt[];
+  readonly finalError: unknown;
+
   constructor(
-    readonly attempts: SemanticProviderAttempt[],
-    readonly finalError: unknown,
+    attempts: SemanticProviderAttempt[],
+    finalError: unknown,
   ) {
     super("semantic_operation_plan_inference_failed");
     this.name = "SemanticOperationPlanInferenceError";
+    this.attempts = attempts;
+    this.finalError = finalError;
   }
 }
 
@@ -114,7 +120,27 @@ export async function parseSemanticOperationPlan(input: {
     configuration: SemanticConfigurationSelection[];
     notes: string[];
   };
+  generation?: import("../ports").SemanticGenerationPort;
 }): Promise<SemanticOperationExecution> {
+  if (input.generation) {
+    const raw = await input.generation.generate({
+      rawMessage: input.rawMessage,
+      conversationState: input.conversation.state,
+      allowedOperations: input.allowedOperations,
+      context: {
+        lastAssistantPrompt: input.lastAssistantPrompt ?? null,
+        pendingAdjustment: input.pendingAdjustment ?? null,
+        pendingConfiguration: input.pendingConfiguration ?? null,
+        menu: summarizeMenu(input.menu),
+        draft: summarizeDraft(input.draft),
+      },
+    });
+    return {
+      providerId: "test_double",
+      plan: validateSemanticOperationPlanOutput(raw),
+      attempts: [{ provider: "test_double", outcome: "succeeded", action: "injected_test_generation" }],
+    };
+  }
   const task = createObjectTask({
     schemaName: "semantic_order_operation_plan",
     outputSchema: semanticOperationPlanSchema,
@@ -124,6 +150,7 @@ export async function parseSemanticOperationPlan(input: {
       "Responde SOLO un plan JSON conforme al schema. Nunca llames herramientas.",
       "Usa exclusivamente IDs que aparezcan en el contexto; no inventes IDs, precios, totales, disponibilidad ni estados.",
       "Solo usa operaciones incluidas en allowedOperations. Si no puedes determinar una operación válida, devuelve operations vacío.",
+      "Para consultar el estado de un pedido usa get_order_status; no inventes estados ni identificadores.",
       "Para agregar productos usa add_product con menuItemId y cantidad. Para editar o retirar una línea existente usa siempre draftOrderItemId exacto.",
       "Para cambiar una configuración entrega optionId y valueIds; para opciones libres usa textValue. No uses nombres de producto u opción como referencias.",
       "Una frase con 'con' puede incluir productos independientes del menú. Si 'carne a la plancha' y 'jugo de fresa' tienen menuItemId distintos, genera una operación add_product por cada uno; no conviertas el jugo en configuración de la carne.",
@@ -225,13 +252,13 @@ export function allowedSemanticOperations(state: Conversation["state"]): Semanti
     return ["add_product", "remove_draft_line", "set_line_quantity", "set_line_notes", "set_line_configuration", "confirm_order", "cancel_order", "request_human"];
   }
   if (state === "awaiting_product_configuration") {
-    return ["add_product", "request_human", "show_menu"];
+    return ["add_product", "request_human", "show_menu", "get_order_status"];
   }
   if (state === "awaiting_billing_reuse_confirmation") {
-    return ["reuse_billing_profile", "change_billing", "switch_to_electronic_billing", "request_human", "show_menu"];
+    return ["reuse_billing_profile", "change_billing", "switch_to_electronic_billing", "request_human", "show_menu", "get_order_status"];
   }
   if (state === "awaiting_confirmation") {
-    return ["confirm_order", "edit_order", "request_human", "show_menu"];
+    return ["confirm_order", "edit_order", "request_human", "show_menu", "get_order_status"];
   }
   if (state === "awaiting_transfer_fallback_payment_method") {
     return ["accept_cash_fallback", "keep_transfer", "request_human"];
@@ -242,7 +269,7 @@ export function allowedSemanticOperations(state: Conversation["state"]): Semanti
   return [
     "add_product", "remove_draft_line", "set_line_quantity", "set_line_notes", "set_line_configuration",
     "set_fulfillment", "set_payment_method", "set_delivery_address", "set_billing",
-    "continue_checkout", "confirm_order", "request_human", "show_menu",
+    "continue_checkout", "confirm_order", "request_human", "show_menu", "get_order_status",
   ];
 }
 
@@ -302,7 +329,7 @@ const semanticOperationPlanSchema = {
         additionalProperties: false,
         required: ["type"],
         properties: {
-          type: { type: "string", enum: ["add_product", "remove_draft_line", "set_line_quantity", "set_line_notes", "set_line_configuration", "set_fulfillment", "set_payment_method", "set_delivery_address", "set_billing", "continue_checkout", "confirm_order", "edit_order", "cancel_order", "reuse_billing_profile", "change_billing", "switch_to_electronic_billing", "accept_cash_fallback", "keep_transfer", "request_human", "show_menu"] },
+          type: { type: "string", enum: ["add_product", "remove_draft_line", "set_line_quantity", "set_line_notes", "set_line_configuration", "set_fulfillment", "set_payment_method", "set_delivery_address", "set_billing", "continue_checkout", "confirm_order", "edit_order", "cancel_order", "reuse_billing_profile", "change_billing", "switch_to_electronic_billing", "accept_cash_fallback", "keep_transfer", "request_human", "show_menu", "get_order_status"] },
           menuItemId: { type: ["string", "null"] },
           draftOrderItemId: { type: ["string", "null"] },
           quantity: { type: ["number", "null"], minimum: 1, maximum: 100 },
@@ -501,6 +528,7 @@ const semanticOperationTypeSchema = z.enum([
   "keep_transfer",
   "request_human",
   "show_menu",
+  "get_order_status",
 ]);
 
 const semanticConfigurationSelectionSchema = z.object({

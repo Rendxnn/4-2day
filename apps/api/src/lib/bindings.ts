@@ -1,5 +1,7 @@
 export type ApiBindings = {
   APP_ENV: string;
+  PARAHOY_HEADLESS_DEBUG?: string;
+  PARAHOY_HEADLESS_LOCAL_PROJECT_ID?: string;
   APP_BASE_URL?: string;
   DASHBOARD_ALLOWED_ORIGINS?: string;
 

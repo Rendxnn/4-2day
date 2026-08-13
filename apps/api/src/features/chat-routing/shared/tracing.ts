@@ -48,9 +48,11 @@ export function markRoutingDecision(
 export function markLlmOutcome(input: RouteInboundMessageInput, payload: {
   used: boolean;
   outcome: NonNullable<ResponseRoutingTrace["llm"]>["outcome"];
-  provider?: "gemini" | "openrouter";
+  provider?: "gemini" | "openrouter" | "test_double";
+  model?: string;
   reason?: string;
-  parsed?: SemanticParserResult;
+    parsed?: SemanticParserResult;
+  operationTypes?: string[];
   diagnostics?: Record<string, unknown>;
 }): void {
   input.routingTrace = {
@@ -62,11 +64,13 @@ export function markLlmOutcome(input: RouteInboundMessageInput, payload: {
       used: payload.used,
       outcome: payload.outcome,
       provider: payload.provider ?? "gemini",
+      model: payload.model ?? input.routingTrace?.llm?.model,
       reason: payload.reason,
       intent: payload.parsed?.intent,
       confidence: payload.parsed?.confidence,
       itemCount: payload.parsed?.items.length,
       editActionCount: payload.parsed?.editActions?.length,
+      operationTypes: payload.operationTypes ?? input.routingTrace?.llm?.operationTypes,
       parsed: payload.parsed ? redactSemanticParserResult(payload.parsed) : undefined,
       diagnostics: payload.diagnostics,
     },

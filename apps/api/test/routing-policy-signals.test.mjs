@@ -61,10 +61,9 @@ test("solo los controles explicitos omiten la interpretacion semantica al inicia
   assert.equal(resolveEntryFlowAction(detect("dos desayunos naturales", "awaiting_mode_selection")), null);
 });
 
-test("el router aplica pagos y respuestas de configurables antes del fallback semántico", () => {
+test("el router envía pagos y configurables al fallback semántico", () => {
   const semanticFallbackIndex = routerSource.indexOf("if (await trySemanticFallback(input))");
-  assert.ok(routerSource.indexOf("tryHandlePaymentMethod(input, signals)") >= 0);
-  assert.ok(routerSource.indexOf("tryHandlePendingProductConfiguration(input, { signals })") >= 0);
-  assert.ok(routerSource.indexOf("tryHandlePaymentMethod(input, signals)") < semanticFallbackIndex);
-  assert.ok(routerSource.indexOf("tryHandlePendingProductConfiguration(input, { signals })") < semanticFallbackIndex);
+  assert.ok(semanticFallbackIndex >= 0);
+  assert.equal(routerSource.includes("tryHandlePaymentMethod(input, signals)"), false);
+  assert.equal(routerSource.includes("tryHandlePendingProductConfiguration(input, { signals })"), false);
 });

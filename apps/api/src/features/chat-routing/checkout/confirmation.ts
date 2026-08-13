@@ -1,5 +1,5 @@
 import { getOrCreateActiveDraftOrder } from "../../draft-orders/service";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import {
   buildDeliveryAddressPrompt,
   buildEditableSummaryAdjustmentPrompt,
@@ -11,6 +11,7 @@ import type { RouteInboundMessageInput } from "../shared/types";
 import { confirmOrderAdjustment, getPendingCustomerReplacementOrder, persistConfirmedOrder } from "../../orders/service";
 import { getDeliveryCoverageSettings } from "../../delivery-coverage/service";
 import { buildCoverageRequestMessage } from "./address-prompts";
+import { recordHeadlessEffect } from "../shared/effects";
 
 export async function tryHandleConfirmation(input: RouteInboundMessageInput, signals: {
   confirmation?: "yes" | "no" | "change" | null;
@@ -27,13 +28,10 @@ export async function tryHandleConfirmation(input: RouteInboundMessageInput, sig
   });
 
   if (signals.confirmation === "no" || signals.confirmation === "change") {
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: pendingAdjustment ? "awaiting_order_adjustment" : "awaiting_more_items",
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(
       input,
@@ -50,6 +48,7 @@ export async function tryHandleConfirmation(input: RouteInboundMessageInput, sig
       orderId: pendingAdjustment.order.id,
       expectedOrderUpdatedAt: pendingAdjustment.order.updatedAt,
     });
+    await recordHeadlessEffect(input, { type: "order_mutation", id: adjustedOrder.id, status: "updated" });
     await sendAndLogText(
       input,
       buildOrderSubmittedForReviewMessage(adjustedOrder.id, adjustedOrder.paymentMethod),
@@ -74,13 +73,10 @@ export async function tryHandleConfirmation(input: RouteInboundMessageInput, sig
       locationId: draft.locationId ?? menu.location?.id,
     });
     if (!settings?.allowOutOfCoverageOrders) {
-      await updateConversationState({
-        env: input.env,
-        schemaName: input.tenant.schemaName,
-        conversationId: input.conversation.id,
+      await updateConversationStateForRoute(input, {
         state: "awaiting_address",
         resetClarificationAttempts: true,
-      }).catch(() => undefined);
+      });
       await sendAndLogText(input, buildCoverageRequestMessage({
         requestLocationMessage: settings?.requestLocationMessage ?? buildDeliveryAddressPrompt(),
         tryGeocodeWrittenAddresses: settings?.tryGeocodeWrittenAddresses,
@@ -96,14 +92,12 @@ export async function tryHandleConfirmation(input: RouteInboundMessageInput, sig
     customerId: input.conversation.customerId,
     draft,
   });
+  await recordHeadlessEffect(input, { type: "order_mutation", id: order.id, status: "updated" });
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_restaurant_confirmation",
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(
     input,

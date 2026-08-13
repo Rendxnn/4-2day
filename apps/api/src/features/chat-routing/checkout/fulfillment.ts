@@ -1,5 +1,5 @@
 import { getOrCreateActiveDraftOrder, updateDraftOrderFulfillment, updateDraftOrderPaymentMethod } from "../../draft-orders/service";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import { buildDeliveryAddressPrompt } from "../../../modules/message-router/response-composer";
 import { loadCurrentMenu } from "../shared/helpers";
 import { sendAndLogText } from "../outbound/send";
@@ -34,13 +34,10 @@ export async function tryHandleFulfillmentSelection(input: RouteInboundMessageIn
       locationId: menu.location?.id,
     });
     if (!settings?.deliveryEnabled) {
-      await updateConversationState({
-        env: input.env,
-        schemaName: input.tenant.schemaName,
-        conversationId: input.conversation.id,
+      await updateConversationStateForRoute(input, {
         state: "awaiting_fulfillment_type",
         resetClarificationAttempts: true,
-      }).catch(() => undefined);
+      });
       await sendAndLogText(input, "En este momento el restaurante no tiene domicilios activos. Puedes continuar para recoger en el local.");
       return true;
     }
@@ -70,13 +67,10 @@ export async function tryHandleFulfillmentSelection(input: RouteInboundMessageIn
       schemaName: input.tenant.schemaName,
       locationId: menu.location?.id,
     });
-    await updateConversationState({
-      env: input.env,
-      schemaName: input.tenant.schemaName,
-      conversationId: input.conversation.id,
+    await updateConversationStateForRoute(input, {
       state: "awaiting_address",
       resetClarificationAttempts: true,
-    }).catch(() => undefined);
+    });
 
     await sendAndLogText(input, buildCoverageRequestMessage({
       requestLocationMessage: settings?.requestLocationMessage ?? buildDeliveryAddressPrompt(),

@@ -9,11 +9,13 @@ import { segmentDeliveryAddress } from "../../delivery-coverage/address-text";
 import { loadCustomerBillingProfiles } from "../../../modules/customer-billing-service/customer-billing-service";
 import { applyBillingDefaults } from "../checkout/billing-helpers";
 import { tryHandleBillingReuseConfirmation } from "../checkout/billing";
+import { readPendingBillingContext } from "../checkout/billing-helpers";
 import { tryHandleConfirmation } from "../checkout/confirmation";
 import { tryHandleTransferFallbackPaymentMethod } from "../transfer/fallback";
 import { moveToManual, handleClarification } from "../manual/handoff";
 import { sendAndLogText } from "../outbound/send";
 import { loadCurrentMenu } from "../shared/helpers";
+import { handleCustomerOrderStatus } from "../order-status";
 import { logRoutingDiagnostic, markLlmAttempt, markLlmOutcome } from "../shared/tracing";
 import type { RouteInboundMessageInput } from "../shared/types";
 import { buildOrderLineItemOptionsSnapshot, extractExplicitConfigurationOptionTexts, isExplicitConfigurationSkip, resolveProductConfiguration, shouldPersistConfigurationSnapshot } from "../../product-configurator/service";
@@ -26,6 +28,8 @@ import { safeErrorSummary, sanitizeErrorDetail } from "../../../lib/observabilit
 import { SemanticOperationPlanInferenceError, allowedSemanticOperations, parseSemanticOperationPlan, semanticOperationPlanFailureDiagnostics, type SemanticBillingInput, type SemanticConfigurationSelection, type SemanticOperation, type SemanticOperationPlan } from "./operation-plan";
 import { consolidateOrderLineItems } from "../../draft-orders/consolidation.ts";
 import { hasExplicitFulfillmentEvidence, hasExplicitPaymentEvidence } from "./evidence.ts";
+import { recordHeadlessEffect } from "../shared/effects";
+import { buildPostconditionFingerprints, type ManifestExpectation } from "./execution-manifest.ts";
 
 type DraftPatch = {
   fulfillmentType?: DraftOrder["fulfillmentType"];
@@ -94,8 +98,38 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   const pendingConfiguration = readPendingProductConfiguration(input.conversation);
 
   markLlmAttempt(input);
+  let manifestCheckpointed = false;
+  const checkpointBeforeEffect = async (plan: SemanticOperationPlan | null, expectation: ManifestExpectation = {}): Promise<void> => {
+    if (manifestCheckpointed || !input.beforeFirstEffect) return;
+    const operationTypes = plan?.operations.map((operation) => operation.type) ?? [];
+    const canonicalIds = plan ? collectCanonicalIds(plan) : [];
+    const preconditions = [`conversation.state:${input.conversation.state}`];
+    const idempotencyKeys = input.message.providerMessageId ? [input.message.providerMessageId] : [];
+    const postconditionKinds = operationTypes.length > 0
+      ? ["conversation.state", "draft_order", "order", "outbound_messages"]
+      : ["conversation.state", "outbound_messages"];
+    const postconditionFingerprints = await buildPostconditionFingerprints({
+      operationTypes,
+      canonicalIds,
+      idempotencyKeys,
+      preconditions,
+      postconditionKinds,
+      expectation,
+    });
+    const digest = await digestManifest({ operationTypes, canonicalIds, preconditions, postconditionFingerprints });
+    await input.beforeFirstEffect({
+      version: 1,
+      digest,
+      operationTypes,
+      canonicalIds,
+      idempotencyKeys,
+      preconditions,
+      postconditionFingerprints,
+    });
+    manifestCheckpointed = true;
+  };
   let parsed: SemanticOperationPlan;
-  let providerId: "gemini" | "openrouter" = "gemini";
+  let providerId: "gemini" | "openrouter" | "test_double" = "gemini";
   try {
     const execution = await parseSemanticOperationPlan({
       env: input.env,
@@ -119,10 +153,19 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
             notes: pendingConfiguration.notes,
           }
         : undefined,
+      generation: input.semanticGeneration,
     });
     parsed = execution.plan;
     parsed = reconcileMenuMentionsInPlan(parsed, menu, input.message.text ?? "", allowedSemanticOperations(input.conversation.state));
     providerId = execution.providerId;
+    input.routingTrace = {
+      ...(input.routingTrace ?? {}),
+      llm: {
+        ...(input.routingTrace?.llm ?? { attempted: true, used: false, outcome: "skipped_or_failed" as const }),
+        operationTypes: parsed.operations.map((operation) => operation.type),
+        model: execution.attempts.at(-1)?.model ?? input.routingTrace?.llm?.model,
+      },
+    };
     logRoutingDiagnostic(input, "semantic_operation_plan.completed", {
       provider: execution.providerId,
       fallbackFromProviderId: execution.fallbackFromProviderId,
@@ -136,6 +179,9 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
     const failedProvider = error instanceof SemanticOperationPlanInferenceError
       ? error.attempts.at(-1)?.provider ?? providerId
       : providerId;
+    const failedModel = error instanceof SemanticOperationPlanInferenceError
+      ? error.attempts.at(-1)?.model
+      : undefined;
     logRoutingDiagnostic(input, "semantic_operation_plan.failed", {
       provider: failedProvider,
       reason: classifySemanticFailure(error),
@@ -148,21 +194,33 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       used: false,
       outcome: "skipped_or_failed",
       provider: failedProvider,
+      model: failedModel,
       reason: "semantic_operation_plan_provider_failure",
       diagnostics,
     });
+    await checkpointBeforeEffect(null);
     await handleSemanticProviderFailure(input, diagnostics);
     return true;
   }
 
   if (parsed.confidence < 0.55 || parsed.operations.length === 0) {
     markLlmOutcome(input, { used: false, outcome: parsed.confidence < 0.55 ? "low_confidence" : "unresolved", provider: providerId, reason: "semantic_operation_plan_empty_or_low_confidence" });
+    await checkpointBeforeEffect(null);
     await handleClarification(input, buildClarificationPrompt(input.conversation.state), "semantic_operation_plan_unresolved");
+    return true;
+  }
+
+  const specialValidation = await validateSpecialSemanticPlan(input, parsed, pendingAdjustment, existingDraft);
+  if (specialValidation) {
+    markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: specialValidation.code });
+    await checkpointBeforeEffect(null);
+    await handleClarification(input, specialValidation.message, specialValidation.code);
     return true;
   }
 
   if (parsed.operations.some((operation) => operation.type === "request_human")) {
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_request_human" });
+    await checkpointBeforeEffect(parsed, { conversationState: "manual", responseExpected: true });
     await moveToManual(input, {
       type: "support_requested",
       manualReason: "semantic_operation_requested_human",
@@ -170,12 +228,25 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       description: "El cliente pidió hablar con una persona.",
       responseText: "Claro, voy a ponerte en contacto con alguien del restaurante para que te ayude.",
     });
+    await recordHeadlessEffect(input, { type: "conversation_mutation", id: input.conversation.id, status: "updated" });
     return true;
   }
 
   if (parsed.operations.some((operation) => operation.type === "show_menu")) {
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_show_menu" });
+    await checkpointBeforeEffect(parsed, { responseExpected: true });
     await sendAndLogText(input, [buildWelcomeMenuText(menu, input.tenant.name), existingDraft ? buildOrderProgressSnapshot(existingDraft) : ""].filter(Boolean).join("\n\n"));
+    return true;
+  }
+
+  if (parsed.operations.some((operation) => operation.type === "get_order_status")) {
+    if (parsed.operations.length !== 1) {
+      await handleClarification(input, "Puedo consultar el estado o continuar con el pedido, pero no ambas cosas a la vez.", "semantic_status_mixed");
+      return true;
+    }
+    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_order_status" });
+    await checkpointBeforeEffect(parsed, { responseExpected: true });
+    await handleCustomerOrderStatus(input);
     return true;
   }
 
@@ -190,6 +261,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   if (controlOperations.length > 0) {
     if (parsed.operations.length !== 1 || controlOperations.length !== 1) {
       markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: "semantic_control_mixed" });
+      await checkpointBeforeEffect(null);
       await handleClarification(input, "Primero resolvamos una sola decisión del pedido para continuar.", "semantic_control_mixed");
       return true;
     }
@@ -199,7 +271,9 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       provider: providerId,
       reason: `semantic_${controlOperations[0]!.type}`,
     });
+    await checkpointBeforeEffect(parsed, buildSpecialManifestExpectation(parsed, existingDraft));
     const handled = await tryHandleSemanticControl(input, controlOperations[0]!);
+    if (handled) await recordHeadlessEffect(input, { type: "conversation_mutation", id: input.conversation.id, status: "updated" });
     markLlmOutcome(input, {
       used: handled,
       outcome: handled ? "handled" : "unresolved",
@@ -211,6 +285,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
 
   if (parsed.operations.some((operation) => operation.type === "confirm_order") && parsed.operations.length === 1) {
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_confirm_order" });
+    await checkpointBeforeEffect(parsed, buildSpecialManifestExpectation(parsed, existingDraft));
     const handled = await tryHandleConfirmation(input, { confirmation: "yes" });
     markLlmOutcome(input, { used: handled, outcome: handled ? "handled" : "unresolved", provider: providerId, reason: "semantic_confirm_order" });
     return handled;
@@ -219,9 +294,11 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   if (parsed.operations.some((operation) => operation.type === "cancel_order")) {
     if (input.conversation.state !== "awaiting_order_adjustment" || parsed.operations.length !== 1 || !pendingAdjustment) {
       markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: "semantic_cancel_not_allowed" });
+      await checkpointBeforeEffect(null);
       await handleClarification(input, "En este momento solo puedo cancelar el pedido que está pendiente por ajustar. Dime qué deseas cambiar o escribe asesor para recibir ayuda.", "semantic_cancel_not_allowed");
       return true;
     }
+    await checkpointBeforeEffect(parsed, { conversationState: "completed", responseExpected: true });
     await cancelPendingCustomerReplacementOrder({
       env: input.env,
       schemaName: input.tenant.schemaName,
@@ -233,6 +310,7 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       schemaName: input.tenant.schemaName,
       conversationId: input.conversation.id,
     });
+    await recordHeadlessEffect(input, { type: "order_mutation", id: pendingAdjustment.order.id, status: "updated" });
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_cancel_order_adjustment" });
     await sendAndLogText(input, "Entendido. Ya cancelé ese pedido. Gracias por avisarme.");
     return true;
@@ -241,39 +319,67 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
   const validation = await validateOperationPlan(input, { menu, draft: existingDraft, plan: parsed, pendingAdjustment, pendingConfiguration });
   if (validation.kind === "pending_configuration") {
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_operation_pending_configuration" });
+    await checkpointBeforeEffect(parsed, { responseExpected: true });
     await persistPendingProductConfiguration(input, validation.payload);
+    await recordHeadlessEffect(input, { type: "conversation_mutation", id: input.conversation.id, status: "updated" });
     return true;
   }
   if (validation.kind === "invalid") {
     logRoutingDiagnostic(input, "semantic_operation_plan.rejected", { code: validation.code, operationTypes: parsed.operations.map((operation) => operation.type) });
     markLlmOutcome(input, { used: false, outcome: "unresolved", provider: providerId, reason: validation.code });
+    await checkpointBeforeEffect(null);
     await handleClarification(input, validation.message, validation.code);
     return true;
   }
 
   if (!validation.value.hasMutation) {
     markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_continue_checkout" });
+    const projected = projectDraft(existingDraft, validation.value, menu);
+    const next = await resolveNextStep(input, projected, menu, {
+      isAdjustment: false,
+      hasItemMutation: false,
+      advancesCheckout: true,
+    });
+    await checkpointBeforeEffect(parsed, {
+      conversationState: next.state,
+      draft: {
+        id: projected.id || null,
+        itemCount: validation.value.items.length,
+        total: projected.total,
+        fulfillment: projected.fulfillmentType ?? null,
+        payment: projected.paymentMethod ?? null,
+      },
+      responseExpected: true,
+    });
     if (existingDraft) {
-      const next = await resolveNextStep(input, existingDraft, menu, {
-        isAdjustment: false,
-        hasItemMutation: false,
-        advancesCheckout: true,
-      });
-      await sendOrderStepMessage(input, existingDraft, menu, next);
+      await sendOrderStepMessage(input, projected, menu, next);
     } else {
       await handleClarification(input, buildClarificationPrompt(input.conversation.state), "semantic_operation_no_mutation");
     }
     return true;
   }
 
-  const next = await resolveNextStep(input, projectDraft(existingDraft, validation.value, menu), menu, {
+  const projected = projectDraft(existingDraft, validation.value, menu);
+  const next = await resolveNextStep(input, projected, menu, {
     isAdjustment: input.conversation.state === "awaiting_order_adjustment",
     hasItemMutation: validation.value.hasItemMutation,
     advancesCheckout: validation.value.advancesCheckout,
     addressResolution: validation.value.addressResolution,
   });
+  let draft: DraftOrder;
   try {
-    const draft = await applySemanticDraftOperationPlan({
+    await checkpointBeforeEffect(parsed, {
+      conversationState: next.state,
+      draft: {
+        id: projected.id || null,
+        itemCount: projected.items.length,
+        total: projected.total,
+        fulfillment: projected.fulfillmentType ?? null,
+        payment: projected.paymentMethod ?? null,
+      },
+      responseExpected: true,
+    });
+    draft = await applySemanticDraftOperationPlan({
       env: input.env,
       schemaName: input.tenant.schemaName,
       conversation: input.conversation,
@@ -287,10 +393,6 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
       nextState: next.state,
       context: contextAfterSemanticPlan(input, next.context, pendingConfiguration),
     });
-    logRoutingDiagnostic(input, "semantic_operation_plan.applied", { operationTypes: parsed.operations.map((operation) => operation.type), nextState: next.state, itemCount: draft.items.length, total: draft.total });
-    markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_operation_plan_applied" });
-    await sendOrderStepMessage(input, draft, menu, next);
-    return true;
   } catch (error) {
     const operationError = semanticOperationFailureDiagnostics(error);
     logRoutingDiagnostic(input, "semantic_operation_plan.transaction_failed", {
@@ -303,6 +405,125 @@ export async function tryHandleSemanticOrder(input: RouteInboundMessageInput): P
     await handleClarification(input, "Tu pedido no cambió porque detecté una actualización reciente. Revisemos el estado actual antes de continuar.", "semantic_operation_transaction_failed");
     return true;
   }
+  await recordHeadlessEffect(input, { type: "draft_order_mutation", id: draft.id, status: "updated" });
+  // The draft RPC also advances the conversation state atomically; expose
+  // that second durable frontier so headless reconciliation can distinguish a
+  // draft-only partial from a draft-plus-conversation partial.
+  await recordHeadlessEffect(input, { type: "conversation_mutation", id: input.conversation.id, status: "updated" });
+  logRoutingDiagnostic(input, "semantic_operation_plan.applied", { operationTypes: parsed.operations.map((operation) => operation.type), nextState: next.state, itemCount: draft.items.length, total: draft.total });
+  markLlmOutcome(input, { used: true, outcome: "handled", provider: providerId, reason: "semantic_operation_plan_applied" });
+  await sendOrderStepMessage(input, draft, menu, next);
+  return true;
+}
+
+async function validateSpecialSemanticPlan(
+  input: RouteInboundMessageInput,
+  plan: SemanticOperationPlan,
+  pendingAdjustment: Awaited<ReturnType<typeof getPendingCustomerReplacementOrder>> | undefined,
+  existingDraft: DraftOrder | null,
+): Promise<{ code: string; message: string } | null> {
+  const allowed = new Set(allowedSemanticOperations(input.conversation.state));
+  const operationTypes = plan.operations.map((operation) => operation.type);
+  if (operationTypes.some((type) => !allowed.has(type))) {
+    return { code: "semantic_operation_not_allowed", message: "No pude aplicar esa acción en el estado actual. Dime qué deseas hacer con tu pedido." };
+  }
+
+  const specialTypes = new Set([
+    "request_human", "show_menu", "get_order_status", "reuse_billing_profile", "change_billing",
+    "switch_to_electronic_billing", "edit_order", "accept_cash_fallback", "keep_transfer", "confirm_order", "cancel_order",
+  ]);
+  const special = plan.operations.filter((operation) => specialTypes.has(operation.type));
+  if (special.length === 0) return null;
+  if (special.length !== 1 || plan.operations.length !== 1) {
+    return { code: "semantic_special_operation_mixed", message: "Primero resolvamos una sola decisión del pedido para continuar." };
+  }
+
+  const operation = special[0]!;
+  if (["reuse_billing_profile", "change_billing", "switch_to_electronic_billing"].includes(operation.type)
+    && !readPendingBillingContext(input.conversation.context)) {
+    return { code: "semantic_billing_context_missing", message: "No encontré una decisión de facturación pendiente. Revisemos el estado actual del pedido." };
+  }
+  if (["accept_cash_fallback", "keep_transfer"].includes(operation.type)
+    && input.conversation.state !== "awaiting_transfer_fallback_payment_method") {
+    return { code: "semantic_transfer_fallback_not_allowed", message: "En este momento no hay una decisión de pago pendiente para cambiar." };
+  }
+  if (operation.type === "cancel_order" && (input.conversation.state !== "awaiting_order_adjustment" || !pendingAdjustment)) {
+    return { code: "semantic_cancel_not_allowed", message: "En este momento no puedo cancelar ese ajuste pendiente." };
+  }
+  if (operation.type === "confirm_order") {
+    if (!existingDraft || existingDraft.items.length === 0) {
+      return { code: "semantic_confirm_draft_missing", message: "No encontré productos confirmables en este pedido. Revisemos el estado actual." };
+    }
+    if (!existingDraft.billing?.type) {
+      return { code: "semantic_confirm_billing_missing", message: "Aún falta completar la información de facturación antes de confirmar." };
+    }
+    if (!existingDraft.paymentMethod) {
+      return { code: "semantic_confirm_payment_missing", message: "Aún falta elegir el método de pago antes de confirmar." };
+    }
+    if (existingDraft.fulfillmentType === "delivery" && existingDraft.isInsideDeliveryCoverage !== true) {
+      const settings = await getDeliveryCoverageSettings({
+        env: input.env,
+        schemaName: input.tenant.schemaName,
+        locationId: existingDraft.locationId,
+      });
+      if (!settings?.allowOutOfCoverageOrders) {
+        return { code: "semantic_confirm_address_missing", message: "Aún falta validar la dirección de entrega antes de confirmar." };
+      }
+    }
+  }
+  return null;
+}
+
+function buildSpecialManifestExpectation(plan: SemanticOperationPlan, draft: DraftOrder | null): ManifestExpectation {
+  const operationType = plan.operations[0]?.type;
+  if (operationType === "confirm_order") {
+    return {
+      conversationState: "awaiting_restaurant_confirmation",
+      draft: draft
+        ? {
+            id: draft.id,
+            itemCount: draft.items.length,
+            total: draft.total,
+            fulfillment: draft.fulfillmentType ?? null,
+            payment: draft.paymentMethod ?? null,
+          }
+        : undefined,
+      orderExpected: true,
+      responseExpected: true,
+    };
+  }
+  if (operationType === "cancel_order") return { conversationState: "completed", responseExpected: true };
+  return { responseExpected: true };
+}
+
+function collectCanonicalIds(plan: SemanticOperationPlan): string[] {
+  const ids = new Set<string>();
+  for (const operation of plan.operations) {
+    for (const key of ["menuItemId", "draftOrderItemId", "optionId"]) {
+      const value = operation[key as keyof typeof operation];
+      if (typeof value === "string") ids.add(value);
+    }
+    if (operation.type === "add_product" || operation.type === "set_line_configuration") {
+      for (const selection of operation.configuration ?? []) {
+        if (typeof selection.optionId === "string") ids.add(selection.optionId);
+        for (const valueId of selection.valueIds ?? []) {
+          if (typeof valueId === "string") ids.add(valueId);
+        }
+      }
+    }
+  }
+  return [...ids].sort();
+}
+
+async function digestManifest(input: {
+  operationTypes: string[];
+  canonicalIds: string[];
+  preconditions: string[];
+  postconditionFingerprints: string[];
+}): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(input));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 /**

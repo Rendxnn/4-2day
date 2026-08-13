@@ -7,7 +7,7 @@ import type {
   ProductOption,
   TodayMenuPayload,
 } from "@42day/types";
-import { updateConversationState } from "../../conversations/service";
+import { updateConversationStateForRoute } from "../shared/effects";
 import {
   buildManualHandoffMessage,
   buildProductConfigurationPrompt,
@@ -199,10 +199,7 @@ export async function persistPendingProductConfiguration(input: RouteInboundMess
     throw new Error("product_configuration.next_option_missing");
   }
 
-  await updateConversationState({
-    env: input.env,
-    schemaName: input.tenant.schemaName,
-    conversationId: input.conversation.id,
+  await updateConversationStateForRoute(input, {
     state: "awaiting_product_configuration",
     context: {
       ...input.conversation.context,
@@ -228,7 +225,7 @@ export async function persistPendingProductConfiguration(input: RouteInboundMess
       } satisfies PendingProductConfigurationContext,
     },
     resetClarificationAttempts: true,
-  }).catch(() => undefined);
+  });
 
   await sendAndLogText(
     input,

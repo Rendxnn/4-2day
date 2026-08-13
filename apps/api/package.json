@@ -8,7 +8,10 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types --experimental-specifier-resolution=node test/**/*.test.mjs"
+    "headless": "node --experimental-loader ./headless/resolve-loader.mjs --experimental-strip-types headless/cli.mjs",
+    "test:headless": "node --experimental-loader ./headless/resolve-loader.mjs --test --experimental-strip-types --experimental-specifier-resolution=node test/headless-chat-*.test.mjs test/normalized-chat-use-case.test.mjs test/customer-outbound-delivery.test.mjs",
+    "test:headless:integration": "node --experimental-loader ./headless/resolve-loader.mjs --test --test-concurrency=1 --experimental-strip-types --experimental-specifier-resolution=node test/headless-chat-*.test.mjs test/normalized-chat-use-case.test.mjs test/customer-outbound-delivery.test.mjs",
+    "test": "node --experimental-loader ./headless/resolve-loader.mjs --test --experimental-strip-types --experimental-specifier-resolution=node test/**/*.test.mjs"
   },
   "dependencies": {
     "@42day/config": "workspace:*",

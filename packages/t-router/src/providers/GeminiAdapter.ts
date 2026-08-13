@@ -8,11 +8,16 @@ const defaultGeminiModel = "gemini-2.5-flash";
 
 export class GeminiAdapter implements AiProviderAdapter {
   readonly providerId = "gemini" as const;
+  private readonly fetcher: ProviderFetch;
+  private readonly timeoutMs: number;
 
   constructor(
-    private readonly fetcher: ProviderFetch = fetch,
-    private readonly timeoutMs = 45000,
-  ) {}
+    fetcher: ProviderFetch = fetch,
+    timeoutMs = 45000,
+  ) {
+    this.fetcher = fetcher;
+    this.timeoutMs = timeoutMs;
+  }
 
   async execute<T = unknown>(input: { context: ProviderContext; task: AiTask }): Promise<AiTaskResult<T>> {
     const model = input.task.model ?? input.context.credentials.model ?? input.context.defaultModel ?? defaultGeminiModel;
