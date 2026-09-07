@@ -9,6 +9,7 @@ head_sampling_rate = 1
 [vars]
 APP_ENV = "local"
 META_GRAPH_API_VERSION = "v22.0"
+DYNAMIC_LINK_BASE_URL = "https://go.thaledon.com"
 
 # Secrets must be configured with:
 # pnpm --filter @42day/api exec wrangler secret put META_VERIFY_TOKEN
@@ -31,6 +32,7 @@ META_GRAPH_API_VERSION = "v22.0"
 GEMINI_MODEL = "gemini-2.5-flash"
 OPENROUTER_MODEL = "openrouter/auto"
 DASHBOARD_ALLOWED_ORIGINS = "https://42day-dashboard.vercel.app,https://parahoy.thaledon.com"
+DYNAMIC_LINK_BASE_URL = "https://go.thaledon.com"
 
 [env.production]
 name = "42day-api-production"
@@ -41,3 +43,4 @@ META_GRAPH_API_VERSION = "v22.0"
 GEMINI_MODEL = "gemini-2.5-flash"
 OPENROUTER_MODEL = "openrouter/auto"
 DASHBOARD_ALLOWED_ORIGINS = "https://42day-dashboard.vercel.app,https://parahoy.thaledon.com"
+DYNAMIC_LINK_BASE_URL = "https://go.thaledon.com"

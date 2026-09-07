@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { ApiBindings } from "../../../lib/bindings";
 import { createSupabaseRestClient } from "../../../lib/supabase-rest";
 import { isMissingTableError } from "../../../shared/errors/supabase";
-import { getAuthorizedTenants, isSystemAdmin, requireAuthUser } from "../auth";
+import { getAuthorizedTenants, requireAuthUser, requireSystemAdmin } from "../auth";
 import type { DashboardContext, DashboardVariables, RestaurantAnalyticsSnapshotRow, TenantRow, TenantStatus, TenantUserRow } from "../types";
 import {
   buildDefaultRestaurantPassword,
@@ -14,17 +14,6 @@ import {
   updatePrimaryLocation,
 } from "../support/admin";
 import { updateAuthAdminUser } from "../support/auth-admin";
-
-async function requireSystemAdmin(c: DashboardContext) {
-  const authUser = await requireAuthUser(c);
-  if (authUser instanceof Response) return authUser;
-
-  if (!isSystemAdmin(authUser)) {
-    return c.json({ error: "admin_forbidden" }, 403);
-  }
-
-  return authUser;
-}
 
 export const adminDashboardRoutes = new Hono<{
   Bindings: ApiBindings;

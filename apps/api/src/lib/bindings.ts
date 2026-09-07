@@ -3,6 +3,7 @@ export type ApiBindings = {
   PARAHOY_HEADLESS_DEBUG?: string;
   PARAHOY_HEADLESS_LOCAL_PROJECT_ID?: string;
   APP_BASE_URL?: string;
+  DYNAMIC_LINK_BASE_URL?: string;
   DASHBOARD_ALLOWED_ORIGINS?: string;
 
   META_VERIFY_TOKEN: string;

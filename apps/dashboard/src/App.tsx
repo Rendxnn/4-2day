@@ -78,6 +78,7 @@ import { PublicCartaConcierge } from "./features/public-carta/PublicCartaConcier
 import { PublicCartaProductDetail } from "./features/public-carta/PublicCartaProductDetail";
 import { PublicRestaurantProfilePage } from "./features/public-profile/PublicRestaurantProfilePage";
 import { AnalyticsSection } from "./features/admin/AnalyticsSection";
+import { DynamicLinksSection } from "./features/admin/DynamicLinksSection";
 import { httpPaymentConfigurationAdapter } from "./features/configuration/paymentConfiguration.http";
 import {
   formatDashboardDateTime as formatLocalizedDateTime,
@@ -4079,7 +4080,7 @@ type AdminMemberForm = {
   password: string;
 };
 
-type AdminSection = "overview" | "settings" | "users" | "analytics";
+type AdminSection = "overview" | "settings" | "users" | "analytics" | "links";
 
 const emptyAdminRestaurantCreateForm: AdminRestaurantCreateForm = {
   name: "",
@@ -4475,6 +4476,14 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[rgba(255,242,227,0.12)] bg-[rgba(255,248,240,0.06)] px-4 text-sm font-semibold text-[rgba(246,236,223,0.82)] transition hover:bg-[rgba(255,248,240,0.12)] hover:text-[var(--text-on-dark)]"
+              onClick={() => setAdminSection("links")}
+              type="button"
+            >
+              <QrCode size={16} />
+              QR / NFC
+            </button>
             <LanguageToggle locale={locale} onChange={setLocale} />
             <button
               className="inline-flex h-11 items-center justify-center rounded-2xl border border-[rgba(255,242,227,0.12)] bg-[rgba(255,248,240,0.06)] px-4 text-sm font-semibold text-[rgba(246,236,223,0.82)] transition hover:bg-[rgba(255,248,240,0.12)] hover:text-[var(--text-on-dark)]"
@@ -4672,7 +4681,9 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
           </aside>
 
           <section className="app-panel min-h-[720px] overflow-hidden rounded-[24px]">
-            {!selectedRestaurant || !editForm ? (
+            {adminSection === "links" ? (
+              <DynamicLinksSection restaurants={restaurants} />
+            ) : !selectedRestaurant || !editForm ? (
               <div className="grid min-h-[720px] place-items-center p-8 text-center">
                 <div>
                   <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--surface-base)] text-[var(--text-soft)]">
@@ -4730,6 +4741,7 @@ function AdminOverviewScreen({ overview, onLogout }: { overview: AdminOverview; 
                     {[
                       { id: "overview" as const, label: locale === "en" ? "Overview" : "Resumen", icon: ClipboardList },
                       { id: "analytics" as const, label: locale === "en" ? "Analytics" : "Analítica", icon: BarChart3 },
+                      { id: "links" as const, label: "QR / NFC", icon: QrCode },
                       { id: "settings" as const, label: locale === "en" ? "Settings" : "Ajustes", icon: Power },
                       { id: "users" as const, label: locale === "en" ? "Users" : "Usuarios", icon: Users },
                     ].map((tab) => {

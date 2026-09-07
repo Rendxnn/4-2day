@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { dashboardRoutes } from "./features/dashboard/router.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { whatsappRoutes } from "./routes/whatsapp.ts";
+import { dynamicLinkPublicRoutes } from "./features/dynamic-links/public-routes.ts";
 import type { ApiBindings } from "./lib/bindings.ts";
 import { SupabaseRestError } from "./lib/supabase-rest.ts";
 import { logEvent, safeErrorSummary, sanitizeErrorDetail } from "./lib/observability/logger.ts";
@@ -42,6 +43,7 @@ app.use(
 app.route("/dashboard", dashboardRoutes);
 app.route("/health", healthRoutes);
 app.route("/webhooks/whatsapp", whatsappRoutes);
+app.route("/", dynamicLinkPublicRoutes);
 
 app.notFound((c) => {
   return c.json({ error: "not_found" }, 404);

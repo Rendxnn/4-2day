@@ -42,6 +42,13 @@ export function isSystemAdmin(user: AuthUser) {
   return user.app_metadata?.system_admin === true || user.app_metadata?.role === "system_admin";
 }
 
+export async function requireSystemAdmin(c: DashboardContext): Promise<AuthUser | Response> {
+  const authUser = await requireAuthUser(c);
+  if (authUser instanceof Response) return authUser;
+  if (!isSystemAdmin(authUser)) return c.json({ error: "admin_forbidden" }, 403);
+  return authUser;
+}
+
 export async function getAuthorizedTenants(env: ApiBindings, userId: string): Promise<TenantRow[]> {
   const supabase = createSupabaseRestClient(env);
   const tenantUsers = await supabase.select<TenantUserRow>({

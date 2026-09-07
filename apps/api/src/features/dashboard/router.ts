@@ -3,6 +3,7 @@ import type { ApiBindings } from "../../lib/bindings";
 import { tenantAccessMiddleware } from "./auth";
 import type { DashboardVariables } from "./types";
 import { adminDashboardRoutes } from "./routes/admin";
+import { dynamicLinkAdminRoutes } from "../dynamic-links/admin-routes";
 import { alertsDashboardRoutes } from "./routes/alerts";
 import { catalogDashboardRoutes } from "./routes/catalog";
 import { conversationsDashboardRoutes } from "./routes/conversations";
@@ -22,6 +23,7 @@ export const dashboardRoutes = new Hono<{
 }>();
 
 dashboardRoutes.route("/", adminDashboardRoutes);
+dashboardRoutes.route("/", dynamicLinkAdminRoutes);
 dashboardRoutes.route("/", publicCartaRoutes);
 dashboardRoutes.route("/", publicProfileRoutes);
 dashboardRoutes.use("/:tenantSlug/*", tenantAccessMiddleware);

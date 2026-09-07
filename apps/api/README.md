@@ -10,6 +10,7 @@ Worker de Cloudflare que recibe WhatsApp, orquesta pedidos y expone la API auten
 - Validar y ejecutar acciones controladas sobre drafts y órdenes.
 - Operar catálogo, menú, pagos, cobertura, alertas, notificaciones y configuración.
 - Servir perfil, carta y concierge públicos.
+- Resolver enlaces físicos QR/NFC bajo `go.thaledon.com/r/:code` y el inventario global interno.
 - Integrar Supabase Postgres/Auth/Storage/Realtime y proveedores de IA.
 
 ## Entradas principales
@@ -34,6 +35,7 @@ Variables requeridas o usadas según la capacidad:
 
 ```text
 APP_BASE_URL
+DYNAMIC_LINK_BASE_URL
 META_VERIFY_TOKEN
 META_ACCESS_TOKEN
 META_PHONE_NUMBER_ID
