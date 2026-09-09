@@ -137,3 +137,9 @@ Las 36 tareas usan checkbox, ID secuencial, etiqueta de historia donde correspon
 ## Phase 6: Corrección de compatibilidad de QR propios
 
 - [X] T037 Corregir `parseDynamicLinkReference` y el diagnóstico de resolución para aceptar exclusivamente referencias propias de `go.thaledon.com` sin esquema, con barra final o caracteres invisibles, y diferenciar errores de QR frente a API/red (FR-003, FR-018; regression).
+
+## Phase 7: Diagnóstico controlado de lookup
+
+- [X] T038 Añadir casos de regresión para errores de lookup autenticado, permisos, cuota, almacenamiento, servicio y red en `apps/dashboard/test/dynamic-link-quick-setup.test.mjs` (FR-018).
+- [X] T039 Mapear los estados y códigos de API a mensajes accionables sin filtrar detalles internos en `apps/dashboard/src/features/admin/QuickDynamicLinkSetup.tsx`, y registrar evidencia focalizada en `quickstart.md` (FR-018).
+- [X] T040 Ejecutar prueba UI, typecheck y build focalizados, revisar que no se incluye ningún secreto y crear un Conventional Commit enfocado (FR-018).

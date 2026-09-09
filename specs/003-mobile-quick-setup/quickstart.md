@@ -35,6 +35,11 @@ pnpm build
 - Se comprobó la lectura de código directo, URL HTTPS canónica, QR propio sin esquema, barra final y carácter invisible final. Un host externo o una referencia sin host propio siguen rechazándose antes del lookup.
 - La pantalla conserva la lectura en el campo manual y separa QR inválido, unidad inexistente y error de API/red para que el operador pueda recuperar el flujo sin adivinar la causa.
 
+## Diagnóstico controlado de lookup — 2026-09-09
+
+- La resolución rápida traduce de forma segura `401`/`unauthorized`, `403`/`admin_forbidden`, `404`, `400`, `429`, `502`/`5xx` y red a acciones recuperables. No presenta cuerpos de API, configuración, tokens ni errores de proveedores.
+- Pasaron `node --test apps/dashboard/test/dynamic-link-quick-setup.test.mjs`, `tsc -p apps/dashboard/tsconfig.json --noEmit` y el build de Vite ejecutado desde `apps/dashboard/`. El build conserva el warning conocido de chunks mayores a 500 kB.
+
 ## Scenario A: camera happy path
 
 1. Abrir QR/NFC en un teléfono y tocar “Configuración rápida”.
@@ -54,6 +59,16 @@ Expected: operación completa menor a 60 s, lectura menor a 3 s y ninguna mutaci
 4. Repetir con QR externo y código inexistente.
 
 Expected: la entrada manual funciona; QR externo no navega; el destino activo cambia conservando URL y asociación.
+
+## Scenario E: lookup authentication and service errors
+
+1. Con sesión expirada o ausente, resolver una URL válida.
+2. Repetir con una cuenta autenticada sin `system_admin`.
+3. Simular respuestas `429`, `502` y `5xx` del API.
+
+Expected: la pantalla explica si hace falta iniciar sesión, solicitar acceso de administrador, esperar y
+reintentar o volver a intentar por una indisponibilidad temporal. No muestra tokens, detalles de Supabase,
+URLs internas ni cuerpos de error sin validar.
 
 ## Scenario C: concurrency and archive
 

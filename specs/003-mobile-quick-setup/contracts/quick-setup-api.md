@@ -37,6 +37,9 @@ La respuesta usa el contrato completo `DynamicLinkUnit`; asociación y destino p
 | 404 | `dynamic_link_not_found` | No existe unidad con ese código |
 | 502 | `dynamic_link_storage_failed` | Dependencia de datos no disponible |
 
+El cliente traduce estos códigos y los `401`, `403`, `429` y `5xx` a mensajes controlados. No presenta
+el cuerpo no tipado de una respuesta ni detalles de configuración del Worker.
+
 ## Configurar y activar atómicamente
 
 `PATCH /admin/dynamic-links/:id/quick-configuration`

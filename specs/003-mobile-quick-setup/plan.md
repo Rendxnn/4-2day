@@ -140,6 +140,7 @@ No se requiere migración. `public_code` ya es único e indexado; la búsqueda e
 
 - Cámara denegada/no disponible: estado local recuperable y entrada manual inmediata.
 - QR inválido/externo: no se navega, no se solicita esa URL y no se consulta inventario hasta obtener un código válido. La UI diferencia este fallo de una unidad inexistente y de un fallo de API/red.
+- Lookup autenticado: `401` pide iniciar sesión de nuevo; `403` informa que la cuenta no posee el rol administrador; `404` conserva el diagnóstico de unidad ausente; `400` informa formato no aceptado; `429` pide esperar y reintentar; `502`/`5xx` informa indisponibilidad temporal. Ningún mensaje muestra cuerpos, tokens, endpoints internos o detalles de proveedores.
 - Unidad inexistente/archivada: mensaje específico; no se exponen destino o asociación de otra unidad.
 - Destino inválido: error de campo desde código estable del backend.
 - `409 dynamic_link_stale`: mantener borrador y pedir al operador volver a resolver la unidad antes de reenviar con una revisión vigente.

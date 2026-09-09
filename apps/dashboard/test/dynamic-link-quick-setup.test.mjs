@@ -21,6 +21,7 @@ test("quick setup keeps camera input safe and provides manual, atomic configurat
   assert.match(quickSetup, /parseDynamicLinkReference\(value, permanentBaseUrl\)/);
   assert.match(quickSetup, /setReference\(value\.slice\(0, 500\)\)/);
   assert.match(quickSetup, /formatResolveError/);
+  assert.match(quickSetup, /formatDynamicLinkLookupFailure/);
   assert.match(quickSetup, /quickConfigureDynamicLink/);
   assert.match(quickSetup, /Guardar y activar/);
   assert.match(quickSetup, /Copiar enlace para NFC/);

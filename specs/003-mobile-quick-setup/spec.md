@@ -90,7 +90,7 @@ Después de configurar una unidad, el administrador copia con un toque la URL pe
 - **FR-015**: El flujo DEBE permitir reiniciar inmediatamente para escanear otra unidad sin volver al listado.
 - **FR-016**: El acceso y las mutaciones DEBEN seguir limitados a administradores globales autenticados.
 - **FR-017**: La cámara DEBE detenerse al detectar un código, cerrar el flujo, perder visibilidad o desmontar la vista; las imágenes de cámara NO DEBEN enviarse ni persistirse.
-- **FR-018**: Los errores de permiso, compatibilidad, código, unidad, destino, concurrencia, red y portapapeles DEBEN tener estados diferenciados y recuperables.
+- **FR-018**: Los errores de permiso, compatibilidad, código, unidad, destino, concurrencia, red y portapapeles DEBEN tener estados diferenciados y recuperables. En la resolución rápida, la UI DEBE traducir de forma controlada `401`, `403`, `404`, `400`, `429`, `502`/`5xx` y fallos de red a mensajes accionables, sin exponer cuerpos de proveedores, tokens, configuración ni detalles internos.
 - **FR-019**: El alcance NO DEBE programar NFC desde el navegador ni marcarlo automáticamente como programado; la asociación opcional se limita al negocio y sede predeterminada, sin administrar lotes ni otros hitos físicos.
 
 ### Non-Functional Requirements
