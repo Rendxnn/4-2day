@@ -27,6 +27,7 @@ import type {
   TodayMenuPayload,
   UpdateDeliveryCoverageSettingsRequest,
   UpdateRestaurantPublicProfileSettingsRequest,
+  QuickDynamicLinkConfigurationRequest,
 } from "@42day/types";
 import { getAccessToken } from "./auth";
 
@@ -447,6 +448,17 @@ export function listDynamicLinks(filters?: { query?: string; status?: DynamicLin
   if (filters?.query) params.set("query", filters.query);
   if (filters?.status) params.set("status", filters.status);
   return request<{ units: DynamicLinkUnit[] }>(`/admin/dynamic-links?${params.toString()}`);
+}
+
+export function getDynamicLinkByCode(code: string) {
+  return request<{ unit: DynamicLinkUnit }>(`/admin/dynamic-links/by-code/${encodeURIComponent(code)}`);
+}
+
+export function quickConfigureDynamicLink(unitId: string, payload: QuickDynamicLinkConfigurationRequest) {
+  return request<{ unit: DynamicLinkUnit }>(`/admin/dynamic-links/${unitId}/quick-configuration`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createDynamicLinkBatch(payload: { requestId: string; label: string; count: number; supplierReference?: string; notes?: string }) {

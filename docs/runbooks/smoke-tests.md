@@ -60,6 +60,19 @@ No certifiques todavía landing completa, dominio propio, carrito multi-producto
 - No uses `automation_enabled` como evidencia del módulo contratado.
 - Hasta implementar carrito, valida solo enlaces de continuidad a WhatsApp, no transferencia de múltiples líneas.
 
+## Enlaces QR/NFC: configuración rápida móvil
+
+Con una cuenta administradora y una unidad de prueba no archivada:
+
+1. Abre **Inventario físico → Configuración rápida** desde un teléfono de 320 px de ancho.
+2. Lee un QR impreso de ParaHoy. Confirma que no se abre su destino durante la lectura y que aparece el código correcto.
+3. Repite denegando permiso de cámara y pegando `https://go.thaledon.com/r/<código>`; un QR o URL externos deben rechazarse sin navegar.
+4. Configura etiqueta y una URL HTTPS; deja el negocio sin asignar y usa **Guardar y activar**. Confirma que la unidad queda activa.
+5. Copia el enlace para NFC, comprueba que coincide exactamente con el URL mostrado y con el QR, y prográmalo/verifícalo mediante el flujo operativo NFC separado.
+6. En una unidad activa modifica el destino y confirma que la pantalla muestra destino actual y nuevo antes de guardar.
+7. Cierra el flujo, cambia de pestaña y completa una lectura en pruebas separadas; la luz/indicador de cámara debe apagarse en cada caso.
+8. Repite en Safari de iPhone y Chrome de Android. Registra fecha, dispositivo, permiso, resultado de copia y al menos 20 lecturas físicas por plataforma antes de imprimir en producción.
+
 ## Seguridad y aislamiento
 
 - Un miembro solo accede a tenants autorizados.

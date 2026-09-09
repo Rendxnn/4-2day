@@ -147,6 +147,8 @@ El estándar aplicable a cualquier corrección de este backlog es `CODESTYLE.md`
 
 - **2026-09-07:** se implementó el MVP interno de enlaces físicos QR/NFC: inventario global en `control`, códigos permanentes de 12 caracteres, auditoría append-only, creación idempotente de lotes, estados terminales, validación segura de destinos y suspensión automática al inactivar un negocio. El Worker sirve `GET|HEAD /r/:code` para `go.thaledon.com` con `302` no cacheable y páginas de respaldo; el dashboard de administrador incluye creación, edición, activación, exportación CSV/SVG/PNG e hitos NFC. Falta el paso externo de migrar la zona DNS a Cloudflare, asociar el Custom Domain del Worker y completar el canario/lectura física antes de imprimir en producción.
 
+- **2026-09-09:** el inventario añade Configuración rápida móvil para unidades QR/NFC. Un administrador puede leer con cámara o introducir manualmente solo un código/enlace permanente de ParaHoy, configurar etiqueta y destino HTTPS, conservar/asignar/quitar opcionalmente el negocio, y activar con una única mutación auditada y control de revisión. El resultado muestra y permite copiar la misma URL permanente para NFC; no programa ni registra hitos NFC automáticamente. Queda pendiente la evidencia manual fechada en iPhone/Safari y Android/Chrome con impresiones físicas antes del uso operativo masivo.
+
 - **2026-08-13:** se ejecutaron recorridos E2E headless reales con Gemini `gemini-2.5-flash`, sin
   dobles fijos, con cinco planes JSON válidos, pedido persistido, captura sin Meta, snapshots de draft/order,
   IDs opacos de efectos, retry, conflicto, inspección y cierre. Se corrigió la persistencia anidada del

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-import { Archive, Check, Copy, Download, ExternalLink, Loader2, Lock, QrCode, Radio, RefreshCw, ShieldBan } from "lucide-react";
+import { Archive, Check, Copy, Download, ExternalLink, Loader2, Lock, QrCode, Radio, RefreshCw, ScanLine, ShieldBan } from "lucide-react";
 import {
   DashboardApiError,
   createDynamicLinkBatch,
@@ -11,6 +11,7 @@ import {
   updateDynamicLink,
 } from "../../api";
 import type { AdminRestaurant, DynamicLinkAuditEvent, DynamicLinkBatch, DynamicLinkDestinationType, DynamicLinkStatus, DynamicLinkUnit } from "../../api";
+import { QuickDynamicLinkSetup } from "./QuickDynamicLinkSetup";
 
 type Props = { restaurants: AdminRestaurant[] };
 
@@ -36,6 +37,7 @@ export function DynamicLinksSection({ restaurants }: Props) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [audits, setAudits] = useState<Record<string, DynamicLinkAuditEvent[]>>({});
+  const [isQuickSetupOpen, setIsQuickSetupOpen] = useState(false);
 
   const visibleUnits = useMemo(() => units.filter((unit) => (
     (!status || unit.status === status)
@@ -137,7 +139,7 @@ export function DynamicLinksSection({ restaurants }: Props) {
     <section className="p-5 sm:p-6">
       <div className="flex flex-col gap-4 border-b border-[rgba(118,93,71,0.12)] pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-faint)]">Inventario físico</p><h2 className="mt-2 text-2xl font-extrabold text-[var(--text-strong)]">Enlaces QR y NFC</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-soft)]">El QR y el NFC siempre contienen la URL permanente de ParaHoy. Cambia el destino aquí sin reimprimir ni reprogramar.</p></div>
-        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[rgba(118,93,71,0.12)] px-4 text-sm font-semibold text-[var(--text-soft)]" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={16} />Actualizar</button>
+        <div className="flex gap-2"><button className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[var(--text-strong)] px-4 text-sm font-semibold text-white" onClick={() => setIsQuickSetupOpen(true)} type="button"><ScanLine size={16} />Configuración rápida</button><button className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[rgba(118,93,71,0.12)] px-4 text-sm font-semibold text-[var(--text-soft)]" disabled={isLoading} onClick={() => void load()} type="button"><RefreshCw size={16} />Actualizar</button></div>
       </div>
 
       <div className="mt-5 grid gap-3 rounded-[22px] border border-[rgba(118,93,71,0.1)] bg-[var(--surface-base)] p-4 md:grid-cols-[1fr_130px_auto]">
@@ -156,6 +158,8 @@ export function DynamicLinksSection({ restaurants }: Props) {
       {(error || message) && <p className={`mt-4 rounded-xl px-3 py-2 text-sm font-semibold ${error ? "bg-[rgba(190,110,95,0.12)] text-[#9a4b43]" : "bg-[rgba(79,122,97,0.1)] text-[var(--success)]"}`}>{error || message}</p>}
 
       {isLoading ? <div className="grid min-h-52 place-items-center"><Loader2 className="animate-spin" size={24} /></div> : <div className="mt-5 space-y-3">{visibleUnits.map((unit) => <UnitCard key={unit.id} unit={unit} restaurants={restaurants} audit={audits[unit.id]} onAction={action} onAudit={showAudit} onCopy={copy} onDownload={downloadQr} onSave={save} />)}{visibleUnits.length === 0 && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-[var(--text-soft)]">No hay unidades para este filtro.</p>}</div>}
+      <button aria-label="Abrir configuración rápida" className="fixed bottom-5 right-5 z-30 inline-flex h-14 items-center gap-2 rounded-full bg-[var(--text-strong)] px-5 text-sm font-bold text-white shadow-lg sm:hidden" onClick={() => setIsQuickSetupOpen(true)} type="button"><ScanLine size={18} />Configurar QR</button>
+      {isQuickSetupOpen && <QuickDynamicLinkSetup restaurants={restaurants} onClose={() => setIsQuickSetupOpen(false)} onUpdated={replaceUnit} />}
     </section>
   );
 }

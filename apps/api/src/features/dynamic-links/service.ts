@@ -2,6 +2,7 @@ import {
   DynamicLinkValidationError,
   buildDynamicLinkUrl,
   generateDynamicLinkCode,
+  inferDynamicLinkDestinationType,
   isDynamicLinkCode,
   normalizeDynamicLinkCode,
   validateDynamicLinkDestination,
@@ -37,6 +38,11 @@ export function isDestinationType(value: unknown): value is DynamicLinkDestinati
 
 export function validateDestination(type: DynamicLinkDestinationType, url: string, env: ApiBindings) {
   return validateDynamicLinkDestination({ type, url, redirectHost: new URL(dynamicLinkBaseUrl(env)).hostname });
+}
+
+export function inferDestinationType(url: string, env: ApiBindings) {
+  const publicMenuHost = new URL(env.APP_BASE_URL?.trim() || "https://parahoy.thaledon.com").hostname;
+  return inferDynamicLinkDestinationType({ url, publicMenuHost });
 }
 
 export type PublicDynamicLinkResolution =

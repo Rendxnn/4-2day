@@ -3,9 +3,11 @@ import { Hono, type Context } from "hono";
 import type { ApiBindings } from "../../lib/bindings.ts";
 import { SupabaseRestError } from "../../lib/supabase-rest.ts";
 import { requireSystemAdmin } from "../dashboard/auth.ts";
+import { listAdminRestaurants } from "../dashboard/support/admin.ts";
 import type { DashboardContext, DashboardVariables } from "../dashboard/types.ts";
 import {
   createDynamicLinkBatch,
+  findDynamicLinkUnitByCode,
   findDynamicLinkUnitById,
   findTenantStatus,
   listDynamicLinkAuditEvents,
@@ -13,7 +15,7 @@ import {
   listDynamicLinkUnits,
   updateDynamicLinkUnit,
 } from "./repository.ts";
-import { createDynamicLinkCode, isDestinationType, toDynamicLinkUnit, validateDestination } from "./service.ts";
+import { createDynamicLinkCode, inferDestinationType, isDestinationType, normalizePublicCode, toDynamicLinkUnit, validateDestination } from "./service.ts";
 
 type UpdateBody = {
   revision?: number;
@@ -24,6 +26,13 @@ type UpdateBody = {
   destinationType?: string | null;
   destinationUrl?: string | null;
   nfcUid?: string | null;
+};
+
+type QuickConfigurationBody = {
+  revision?: number;
+  label?: string;
+  destinationUrl?: string;
+  tenantId?: string | null;
 };
 
 export const dynamicLinkAdminRoutes = new Hono<{ Bindings: ApiBindings; Variables: DashboardVariables }>();
@@ -79,6 +88,90 @@ dynamicLinkAdminRoutes.post("/admin/dynamic-links/batches", async (c) => {
       units,
     });
     return c.json(payload, 201);
+  } catch (error) {
+    return dynamicLinkError(c, error);
+  }
+});
+
+dynamicLinkAdminRoutes.get("/admin/dynamic-links/by-code/:code", async (c) => {
+  const authUser = await requireSystemAdmin(c as DashboardContext);
+  if (authUser instanceof Response) return authUser;
+  const publicCode = normalizePublicCode(c.req.param("code"));
+  if (!publicCode) return c.json({ error: "dynamic_link_code_invalid" }, 400);
+  let unit;
+  try {
+    unit = await findDynamicLinkUnitByCode(c.env, publicCode);
+  } catch (error) {
+    return dynamicLinkError(c, error);
+  }
+  if (!unit) return c.json({ error: "dynamic_link_not_found" }, 404);
+  return c.json({ unit: toDynamicLinkUnit(unit, c.env) });
+});
+
+dynamicLinkAdminRoutes.patch("/admin/dynamic-links/:id/quick-configuration", async (c) => {
+  const authUser = await requireSystemAdmin(c as DashboardContext);
+  if (authUser instanceof Response) return authUser;
+  const body = await c.req.json().catch(() => ({})) as QuickConfigurationBody;
+  if (typeof body.revision !== "number" || !Number.isInteger(body.revision) || body.revision < 1) return c.json({ error: "dynamic_link_revision_invalid" }, 400);
+  const label = typeof body.label === "string" ? body.label.trim() : "";
+  if (!label || label.length > 160) return c.json({ error: "dynamic_link_label_invalid" }, 400);
+  if (typeof body.destinationUrl !== "string" || !body.destinationUrl.trim()) return c.json({ error: "dynamic_link_destination_invalid" }, 400);
+
+  let current;
+  try {
+    current = await findDynamicLinkUnitById(c.env, c.req.param("id"));
+  } catch (error) {
+    return dynamicLinkError(c, error);
+  }
+  if (!current) return c.json({ error: "dynamic_link_not_found" }, 404);
+  if (current.status === "archived") return c.json({ error: "dynamic_link_archived" }, 409);
+
+  let destinationType: ReturnType<typeof inferDestinationType>;
+  let destinationUrl: string;
+  try {
+    destinationType = inferDestinationType(body.destinationUrl, c.env);
+    destinationUrl = validateDestination(destinationType, body.destinationUrl, c.env);
+  } catch (error) {
+    if (error instanceof DynamicLinkValidationError) return c.json({ error: error.code }, 400);
+    throw error;
+  }
+
+  const patch: Record<string, unknown> = {
+    label,
+    destination_type: destinationType,
+    destination_url: destinationUrl,
+    status: "active",
+  };
+  if (body.tenantId !== undefined) {
+    if (body.tenantId === null) {
+      patch.tenant_id = null;
+      patch.location_id = null;
+      patch.location_label_snapshot = null;
+    } else if (typeof body.tenantId === "string" && isUuid(body.tenantId)) {
+      let restaurant;
+      try {
+        restaurant = (await listAdminRestaurants(c.env)).find((candidate) => candidate.id === body.tenantId);
+      } catch (error) {
+        return dynamicLinkError(c, error);
+      }
+      if (!restaurant) return c.json({ error: "dynamic_link_tenant_not_found" }, 400);
+      patch.tenant_id = restaurant.id;
+      patch.location_id = restaurant.location?.id ?? null;
+      patch.location_label_snapshot = restaurant.location?.name ?? null;
+    } else {
+      return c.json({ error: "dynamic_link_tenant_invalid" }, 400);
+    }
+  }
+
+  try {
+    const updated = await updateDynamicLinkUnit(c.env, {
+      unitId: current.id,
+      revision: body.revision,
+      actorUserId: authUser.id,
+      eventType: current.status === "active" ? "updated" : "activated",
+      patch,
+    });
+    return c.json({ unit: toDynamicLinkUnit(updated, c.env) });
   } catch (error) {
     return dynamicLinkError(c, error);
   }
@@ -201,7 +294,7 @@ async function normalizeUpdatePatch(env: ApiBindings, current: NonNullable<Await
 }
 
 function dynamicLinkError(c: Context<{ Bindings: ApiBindings; Variables: DashboardVariables }>, error: unknown) {
-  const message = error instanceof Error ? error.message : "dynamic_link_update_failed";
+  const message = error instanceof SupabaseRestError ? error.body : error instanceof Error ? error.message : "dynamic_link_update_failed";
   if (message.includes("dynamic_link_stale")) return c.json({ error: "dynamic_link_stale" }, 409);
   if (message.includes("dynamic_link_archived")) return c.json({ error: "dynamic_link_archived" }, 409);
   if (message.includes("dynamic_link_not_found")) return c.json({ error: "dynamic_link_not_found" }, 404);

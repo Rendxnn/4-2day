@@ -55,6 +55,57 @@ export function buildDynamicLinkUrl(baseUrl: string, publicCode: string) {
   return new URL(`/r/${code}`, base).toString();
 }
 
+/**
+ * Extracts a ParaHoy physical-link code without ever following the scanned URL.
+ * A scanner may provide either the code itself or the canonical permanent URL.
+ */
+export function parseDynamicLinkReference(value: string, baseUrl: string) {
+  const directCode = normalizeDynamicLinkCode(value);
+  if (isDynamicLinkCode(directCode)) return directCode;
+
+  let scannedUrl: URL;
+  let expectedBase: URL;
+  try {
+    scannedUrl = new URL(value.trim());
+    expectedBase = new URL(baseUrl);
+  } catch {
+    throw new DynamicLinkValidationError("dynamic_link_reference_invalid");
+  }
+
+  const segments = scannedUrl.pathname.split("/").filter(Boolean);
+  const code = segments.length === 2 && segments[0] === "r" ? normalizeDynamicLinkCode(segments[1]!) : "";
+  if (
+    expectedBase.protocol !== "https:"
+    || scannedUrl.protocol !== "https:"
+    || scannedUrl.origin !== expectedBase.origin
+    || scannedUrl.search
+    || scannedUrl.hash
+    || !isDynamicLinkCode(code)
+  ) {
+    throw new DynamicLinkValidationError("dynamic_link_reference_invalid");
+  }
+  return code;
+}
+
+export function inferDynamicLinkDestinationType(input: {
+  url: string;
+  publicMenuHost: string;
+}): DynamicLinkDestinationType {
+  let destination: URL;
+  try {
+    destination = new URL(input.url.trim());
+  } catch {
+    throw new DynamicLinkValidationError("dynamic_link_destination_url_invalid");
+  }
+
+  const hostname = destination.hostname.toLowerCase().replace(/\.$/, "");
+  if (isOfficialHost(hostname, ["google.com", "g.page", "maps.app", "goo.gl"])) return "google_review";
+  if (isOfficialHost(hostname, ["wa.me", "whatsapp.com"])) return "whatsapp";
+  if (isOfficialHost(hostname, ["instagram.com"])) return "instagram";
+  if (hostname === input.publicMenuHost.toLowerCase().replace(/\.$/, "") && (destination.pathname === "/carta" || destination.pathname.startsWith("/carta/"))) return "menu";
+  return "website";
+}
+
 export function validateDynamicLinkDestination(input: {
   type: DynamicLinkDestinationType;
   url: string;

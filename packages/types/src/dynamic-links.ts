@@ -56,3 +56,11 @@ export type DynamicLinkAuditEvent = {
   metadata?: Record<string, unknown>;
   createdAt: string;
 };
+
+/** Public dashboard contract. Omit tenantId to preserve; use null to clear it and its location. */
+export type QuickDynamicLinkConfigurationRequest = {
+  revision: number;
+  label: string;
+  destinationUrl: string;
+  tenantId?: string | null;
+};

@@ -10,8 +10,10 @@
     "test": "node --test --experimental-strip-types test/**/*.test.mjs"
   },
   "dependencies": {
+    "@42day/core": "workspace:*",
     "@42day/types": "workspace:*",
     "@supabase/supabase-js": "^2.57.4",
+    "@zxing/browser": "0.2.1",
     "@tailwindcss/vite": "^4.2.4",
     "emojibase-data": "17.0.0",
     "leaflet": "1.9.4",
