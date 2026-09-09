@@ -4,6 +4,11 @@
 
 Un deploy no demuestra por sí solo que Meta, Supabase, Storage, Auth o el dashboard estén bien configurados. Registra ambiente, fecha y resultado de cada smoke test. Nunca copies tokens, project refs, phone IDs, WABA IDs, URLs firmadas ni IDs de cuenta a este documento.
 
+**Producción requiere autorización explícita del usuario en el mensaje actual.** Implementar, verificar,
+commitear o desplegar staging no concede autorización para publicar dashboard, Worker, DNS, secretos,
+migraciones ni ningún otro cambio en producción. Antes de ejecutar una acción de producción, confirma el
+objetivo, el ambiente y el cambio exacto; si alguno no está explícitamente autorizado, no la ejecutes.
+
 ## Preflight
 
 ```bash

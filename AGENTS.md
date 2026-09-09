@@ -48,6 +48,7 @@ procedimientos operativos.
 ## Reglas de implementación
 
 - Preserva los cambios del usuario y excluye trabajo no relacionado con el feature activo.
+- **Prohibición de producción:** NUNCA publiques, despliegues, promociones ni asocies un cambio a producción (incluidos dashboard, Worker, DNS, secretos, migraciones o proveedores externos) salvo que el usuario lo autorice explícitamente en el mensaje actual. La autorización para implementar, verificar, commitear o desplegar staging no autoriza producción. Antes de cualquier acción de producción, confirma el objetivo, el ambiente y el cambio exacto; si falta cualquiera de ellos, detente y pide autorización.
 - Usa `pnpm` y los scripts existentes. No añadas dependencias de producción sin documentarlas y
   aprobarlas en el plan.
 - Respeta `CODESTYLE.md`. Si una regla amplía materialmente el alcance, registra la deuda y la
