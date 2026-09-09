@@ -1,4 +1,4 @@
-import { parseDynamicLinkReference } from "@42day/core";
+import { DynamicLinkValidationError, parseDynamicLinkReference } from "@42day/core";
 import { Check, Clipboard, Loader2, QrCode, ScanLine, X } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { DashboardApiError, getDynamicLinkByCode, quickConfigureDynamicLink } from "../../api";
@@ -28,6 +28,7 @@ export function QuickDynamicLinkSetup({ restaurants, onClose, onUpdated }: Props
   const [copied, setCopied] = useState(false);
 
   const resolveReference = useCallback(async (value: string) => {
+    setReference(value.slice(0, 500));
     setPhase("resolving");
     setError("");
     try {
@@ -41,9 +42,7 @@ export function QuickDynamicLinkSetup({ restaurants, onClose, onUpdated }: Props
       setCopied(false);
       setPhase(result.unit.status === "archived" ? "archived" : "form");
     } catch (resolveError) {
-      setError(resolveError instanceof DashboardApiError && resolveError.backendError === "dynamic_link_not_found"
-        ? "No existe una unidad de ParaHoy para este código."
-        : "El QR debe contener un enlace permanente de go.thaledon.com/r/CÓDIGO o el código de 12 caracteres.");
+      setError(formatResolveError(resolveError));
       setPhase("manual");
     }
   }, []);
@@ -130,4 +129,5 @@ export function QuickDynamicLinkSetup({ restaurants, onClose, onUpdated }: Props
 
 function StateCard({ children }: { children: ReactNode }) { return <div className="mt-6 rounded-2xl border border-[rgba(118,93,71,0.14)] bg-white p-5">{children}</div>; }
 function hasDestinationChanged(current: string | undefined, next: string) { try { return new URL(current ?? "").toString() !== new URL(next.trim()).toString(); } catch { return current?.trim() !== next.trim(); } }
+function formatResolveError(error: unknown) { if (error instanceof DynamicLinkValidationError) return "El QR no contiene un código válido ni una URL propia de go.thaledon.com/r/CÓDIGO."; if (error instanceof DashboardApiError) { if (error.backendError === "dynamic_link_not_found") return "No existe una unidad de ParaHoy para este código."; if (error.backendError === "dynamic_link_code_invalid") return "El código leído no tiene el formato esperado."; return "Se leyó el QR, pero no fue posible consultar la unidad. Revisa tu conexión e inténtalo otra vez."; } return "No fue posible consultar la unidad por un error de red. Inténtalo otra vez."; }
 function formatError(error: unknown) { if (error instanceof DashboardApiError) { if (error.backendError === "dynamic_link_stale") return "Esta unidad cambió en otra sesión. Vuelve a escanearla antes de guardar."; if (error.backendError === "dynamic_link_archived") return "La unidad fue archivada y no puede modificarse."; return "No se pudo guardar. Revisa la URL destino e inténtalo de nuevo."; } return "No se pudo guardar por un error de red. Inténtalo de nuevo."; }

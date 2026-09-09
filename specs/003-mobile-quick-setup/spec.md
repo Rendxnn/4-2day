@@ -75,7 +75,7 @@ Después de configurar una unidad, el administrador copia con un toque la URL pe
 
 - **FR-001**: El inventario QR/NFC DEBE ofrecer una acción prominente “Configuración rápida” accesible sin buscar una unidad.
 - **FR-002**: El flujo DEBE abrir una experiencia de pantalla completa en móvil y permitir escanear un QR usando preferentemente la cámara trasera.
-- **FR-003**: El flujo DEBE aceptar únicamente un código público válido o una URL canónica `https://go.thaledon.com/r/<código>`; nunca debe navegar automáticamente al contenido escaneado.
+- **FR-003**: El flujo DEBE aceptar únicamente un código público válido o una URL propia de `go.thaledon.com/r/<código>`. La variante canónica es HTTPS; para compatibilidad con QR propios ya impresos puede completar el esquema HTTPS ausente y tolerar una barra final, pero nunca debe navegar automáticamente al contenido escaneado ni aceptar otro host.
 - **FR-004**: El administrador DEBE poder pegar una URL o escribir un código como alternativa completa a la cámara.
 - **FR-005**: La búsqueda DEBE resolver el código exacto en todo el inventario, sin depender del límite ni de los filtros de la lista visible.
 - **FR-006**: Después de resolver la unidad, el flujo DEBE mostrar su código, URL permanente, estado, etiqueta, destino actual y si está asociada a un negocio.

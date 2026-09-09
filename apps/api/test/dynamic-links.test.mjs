@@ -52,7 +52,11 @@ test("destinations only allow public HTTPS and official hosts for typed destinat
 test("quick setup only accepts ParaHoy codes or canonical permanent URLs and infers destination types", () => {
   assert.equal(parseDynamicLinkReference("0123456789ab", "https://go.thaledon.com"), "0123456789AB");
   assert.equal(parseDynamicLinkReference("https://go.thaledon.com/r/0123456789ab", "https://go.thaledon.com"), "0123456789AB");
+  assert.equal(parseDynamicLinkReference("go.thaledon.com/r/0123456789ab", "https://go.thaledon.com"), "0123456789AB");
+  assert.equal(parseDynamicLinkReference("https://go.thaledon.com/r/0123456789ab/", "https://go.thaledon.com"), "0123456789AB");
+  assert.equal(parseDynamicLinkReference("https://go.thaledon.com/r/0123456789ab\u200B", "https://go.thaledon.com"), "0123456789AB");
   assert.throws(() => parseDynamicLinkReference("https://example.com/r/0123456789AB", "https://go.thaledon.com"), /reference_invalid/);
+  assert.throws(() => parseDynamicLinkReference("example.com/r/0123456789AB", "https://go.thaledon.com"), /reference_invalid/);
   assert.throws(() => parseDynamicLinkReference("https://go.thaledon.com/r/0123456789AB?next=https://bad.example", "https://go.thaledon.com"), /reference_invalid/);
   assert.equal(inferDynamicLinkDestinationType({ url: "https://maps.app.goo.gl/example", publicMenuHost: "parahoy.thaledon.com" }), "google_review");
   assert.equal(inferDynamicLinkDestinationType({ url: "https://wa.me/573001234567", publicMenuHost: "parahoy.thaledon.com" }), "whatsapp");

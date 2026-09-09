@@ -57,7 +57,7 @@ La cámara se encapsulará en un componente cargado bajo demanda con `@zxing/bro
 
 1. En la cabecera de QR/NFC aparece “Configuración rápida”; en móvil se mantiene visible como acción sticky inferior dentro de la sección.
 2. Al abrir, se muestra un diálogo full-screen con cámara trasera, guía visual, texto “Apunta al QR de ParaHoy” y alternativa “Pegar enlace o código”.
-3. La primera lectura válida detiene la cámara. El cliente extrae únicamente el código de una URL canónica o de un código manual y consulta la unidad exacta.
+3. La primera lectura válida detiene la cámara. El cliente extrae únicamente el código de una URL propia de `go.thaledon.com` o de un código manual y consulta la unidad exacta. Para QR propios legados sin esquema o con barra final normaliza localmente a HTTPS; no navega ni sigue la lectura.
 4. El formulario muestra código, URL permanente, estado y negocio actual. Presenta etiqueta, destino y un selector opcional de negocio. Sin cambio conserva la asociación; “Sin asignar” la elimina; un negocio elegido asigna su sede predeterminada. El backend infiere el tipo autoritativo.
 5. “Guardar y activar” envía una sola solicitud. No se muestra confirmación por falta de negocio, sede o NFC. Si una unidad activa cambia de destino, se muestra una confirmación con el destino anterior y el nuevo.
 6. En éxito se muestran el código y `go.thaledon.com/r/...`, con “Copiar enlace para NFC” como acción primaria y “Escanear otro” como acción secundaria.
@@ -139,7 +139,7 @@ No se requiere migración. `public_code` ya es único e indexado; la búsqueda e
 ## Failure, Privacy and Observability
 
 - Cámara denegada/no disponible: estado local recuperable y entrada manual inmediata.
-- QR inválido/externo: no se navega, no se solicita esa URL y no se consulta inventario hasta obtener un código válido.
+- QR inválido/externo: no se navega, no se solicita esa URL y no se consulta inventario hasta obtener un código válido. La UI diferencia este fallo de una unidad inexistente y de un fallo de API/red.
 - Unidad inexistente/archivada: mensaje específico; no se exponen destino o asociación de otra unidad.
 - Destino inválido: error de campo desde código estable del backend.
 - `409 dynamic_link_stale`: mantener borrador y pedir al operador volver a resolver la unidad antes de reenviar con una revisión vigente.

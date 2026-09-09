@@ -60,14 +60,16 @@ export function buildDynamicLinkUrl(baseUrl: string, publicCode: string) {
  * A scanner may provide either the code itself or the canonical permanent URL.
  */
 export function parseDynamicLinkReference(value: string, baseUrl: string) {
-  const directCode = normalizeDynamicLinkCode(value);
+  const sanitizedValue = value.trim().replace(/[\u200B-\u200D\uFEFF]/g, "");
+  const directCode = normalizeDynamicLinkCode(sanitizedValue);
   if (isDynamicLinkCode(directCode)) return directCode;
 
   let scannedUrl: URL;
   let expectedBase: URL;
   try {
-    scannedUrl = new URL(value.trim());
     expectedBase = new URL(baseUrl);
+    const hostOnlyReference = sanitizedValue.split("/", 1)[0]?.toLowerCase() === expectedBase.host.toLowerCase();
+    scannedUrl = new URL(hostOnlyReference ? `${expectedBase.protocol}//${sanitizedValue}` : sanitizedValue);
   } catch {
     throw new DynamicLinkValidationError("dynamic_link_reference_invalid");
   }
