@@ -30,6 +30,11 @@ pnpm build
 - El gate raíz Turbo no pudo completarse: Corepack rechazó ejecutar el `pnpm@9.15.0` fijado porque no pudo verificar su firma desde el registry. No se ignoró esa protección. La discrepancia corresponde a `ENG-012`; los checks focalizados directos anteriores sí pasaron.
 - Pendientes de evidencia externa: atomicidad/auditoría/RLS sobre Supabase real y la matriz manual iPhone/Safari + Android/Chrome de este documento.
 
+## Regresión de lectura — 2026-09-09
+
+- Se comprobó la lectura de código directo, URL HTTPS canónica, QR propio sin esquema, barra final y carácter invisible final. Un host externo o una referencia sin host propio siguen rechazándose antes del lookup.
+- La pantalla conserva la lectura en el campo manual y separa QR inválido, unidad inexistente y error de API/red para que el operador pueda recuperar el flujo sin adivinar la causa.
+
 ## Scenario A: camera happy path
 
 1. Abrir QR/NFC en un teléfono y tocar “Configuración rápida”.

@@ -133,3 +133,7 @@ Phases 1–3 entregan el valor principal: escaneo y configuración atómica. Sin
 ## Format Validation
 
 Las 36 tareas usan checkbox, ID secuencial, etiqueta de historia donde corresponde, requisitos trazables y rutas concretas.
+
+## Phase 6: Corrección de compatibilidad de QR propios
+
+- [X] T037 Corregir `parseDynamicLinkReference` y el diagnóstico de resolución para aceptar exclusivamente referencias propias de `go.thaledon.com` sin esquema, con barra final o caracteres invisibles, y diferenciar errores de QR frente a API/red (FR-003, FR-018; regression).
